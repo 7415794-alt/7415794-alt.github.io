@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google-adsense-account" content="ca-pub-4318202692681153">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4318202692681153" crossorigin="anonymous"></script>
+<title>적중률 제대로 읽는 법: 54%는 높은 걸까? | 스톡시그널</title>
+<meta name="description" content="주가 예측 AI의 적중률·AUC·기준선의 의미와, 숫자만 보면 속기 쉬운 함정들">
+<link rel="canonical" href="https://stocksignals.kr/hit-rate.html">
+<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="in">
+<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<nav><a href="index.html">홈</a><a href="guide.html" class=on>투자 지표 가이드</a><a href="research.html">AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
+</div></header>
+<main>
+<article><h1>적중률 제대로 읽는 법: 54%는 높은 걸까?</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>"이 AI 적중률이 54%래요"라는 말을 들으면 낮아 보일 수 있습니다. 하지만 주가 예측에서는 숫자 하나로 실력을 판단하기 어렵습니다. 스톡시그널을 만들며 직접 겪은 함정들을 정리했습니다.</p>
+<h2>1. 적중률이란?</h2>
+<p>AI가 "오른다(확률 50% 이상)"라고 한 날 실제로 올랐거나, "내린다"라고 한 날 실제로 오르지 않은 비율입니다.
+스톡시그널의 최근 1년 검증 적중률은 1일 뒤 약 54%, 5일 뒤 약 54%, 20일 뒤 약 54% 수준입니다.</p>
+
+<h2>2. 함정 ① "항상 내린다"만 찍어도 56%</h2>
+<p>최근 1년 동안 한국 종목이 하루 뒤 오른 비율은 약 44%였습니다(보합 포함). 즉 매일 모든 종목에 "안 오른다"고만 말해도 적중률이 56%가 나옵니다.
+이 때문에 적중률만 보면 아무 생각 없는 예측이 AI보다 좋아 보이는 일이 생깁니다.</p>
+<p>그래서 앱의 성적 화면에는 <b>"단순 찍기 정확도"</b>(항상 많은 쪽으로 찍었을 때)를 함께 보여 줍니다. AI 적중률이 이 기준선보다 얼마나 높은지가 진짜 실력입니다.</p>
+
+<h2>3. 함정 ② 가격이 안 움직인 날</h2>
+<p>거래가 거의 없는 종목은 하루 종일 가격이 그대로인 날이 많습니다. "오르지 않음"이 정답이 되니 하락 예측이 자동으로 맞습니다.
+실험해 보니 AI가 가장 확신한 상위 5% 예측의 적중률이 64%로 보였지만, 가격이 그대로였던 날을 빼면 1일 뒤 예측은 53%로 떨어졌습니다.
+숫자가 너무 좋아 보이면 이런 착시가 없는지 먼저 의심해야 합니다.</p>
+
+<h2>4. 더 믿을 만한 지표: AUC</h2>
+<p>AUC는 "실제로 오른 종목에 더 높은 확률을 줬는가"를 봅니다. 0.5는 동전 던지기, 1.0은 완벽입니다.
+주가처럼 맞히기 어려운 문제에서는 0.53~0.58만 돼도 의미 있는 차이로 봅니다. 기준선을 속이는 트릭(모두 하락으로 찍기)으로는 AUC가 올라가지 않기 때문에 실력을 더 정직하게 보여 줍니다.</p>
+
+<h2>5. 확률이 높을수록 더 잘 맞나?</h2>
+<p>대체로 그렇습니다. 수급을 넣은 AI를 509개 종목으로 실험했을 때, 확신이 높은 상위 10% 예측의 적중률(가격이 움직인 날만)은 1일 뒤 56.9%, 5일 뒤 57.7%, 20일 뒤 59.5%로 전체 평균보다 높았습니다.
+그래서 앱에서는 확률이 50% 근처인 종목보다 멀리 떨어진 종목의 신호에 조금 더 의미를 둘 수 있습니다.</p>
+
+<h2>6. 적중률보다 중요한 것</h2>
+<div class=wrap><table>
+<tr><th>최근 1년, 매일 확률 상위 10종목</th><th>1일 뒤</th><th>20일 뒤</th></tr>
+<tr><td>AI가 고른 10종목 평균 수익률</td><td class=up>+0.43%</td><td class=up>+2.83%</td></tr>
+<tr><td>전 종목 평균 수익률</td><td>-0.01%</td><td class=down>-0.78%</td></tr>
+</table></div>
+<p>상위 10종목 중 실제로 오른 비율은 절반이 안 됐지만, 평균 수익률은 전체보다 확실히 좋았습니다. 오른 종목이 더 크게 올랐기 때문입니다.
+즉 AI의 강점은 "오를지 내릴지 맞히기"보다 "상대적으로 나은 종목 고르기"에 가깝습니다. (과거 결과이며 앞으로도 같다는 보장은 없습니다.)</p>
+<div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="stock-ai-icon/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
+</main>
+<footer>
+<a href="about.html">소개·문의</a>·<a href="privacy.html">개인정보 처리방침</a>·<a href="disclaimer.html">투자 유의사항·이용약관</a><br>
+© 2026 스톡시그널 · 이 사이트의 글은 투자 권유가 아니며 공부와 참고를 위한 자료입니다.
+</footer>
+</body>
+</html>
