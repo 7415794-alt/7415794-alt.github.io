@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
 Disallow: /stock-ai-icon/
+Disallow: /app/
 
 Sitemap: https://stocksignals.kr/sitemap.xml
