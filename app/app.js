@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.2.0
+/* 스톡시그널 앱 v2.2.1
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.2.0";
+const VERSION = "2.2.1";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -426,7 +426,7 @@ route(/^\/$/, async () => {
   <div class="card"><h2>❓ 처음이신가요?</h2>
     <p class="small" style="margin:0">위 검색창에 종목 이름을 넣으면 AI가 1·5·20거래일 뒤 오를 확률을 보여 줘요.
     매일 오후 5시에 전 종목을 다시 계산하고, 장중 가격은 20분마다 새로 고쳐요.
-    <a href="/guide.html" style="text-decoration:underline">사용 설명서</a></p></div>
+    <a href="/guide.html" style="text-decoration:underline">사용 설명서</a>${inApp() ? "" : ` · <a href="#/more" style="text-decoration:underline">📱 안드로이드 앱 받기</a>`}</p></div>
   ${foot()}`;
 }, "home");
 
@@ -1090,6 +1090,8 @@ route(/^\/cmp(?:\?(\d{6})?-(\d{6})?)?/, async (a, b) => {
 }, "home");
 
 // ───────── ☰ 더보기 ─────────
+// 앱(설치된 화면)으로 열었는지: 앱 안에서는 APK 받기 칸을 숨김
+const inApp = () => matchMedia("(display-mode: standalone)").matches || document.referrer.startsWith("android-app://");
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; });
 route(/^\/more/, async () => {
@@ -1109,6 +1111,10 @@ route(/^\/more/, async () => {
     <div class="row"><div class="nm"><b>기본 예측 기간</b></div>${segH()}</div>
     <div class="row"><div class="nm"><b>자료 새로 받기</b><small>AI 기준일 ${esc(META?.date || "-")} · 계산 ${esc(META?.built_at || "-")}</small></div><button class="icon-btn" id="refresh">새로 고침</button></div>
     ${installEvt ? `<div class="row"><div class="nm"><b>홈 화면에 앱 추가</b></div><button class="icon-btn" id="install">추가</button></div>` : ""}</div>
+  ${inApp() ? "" : `<div class="card"><h2>📱 안드로이드 앱 받기</h2>
+    <a class="row" href="stocksignals.apk" download><div class="nm"><b>스톡시그널 앱 내려받기 (APK)</b><small>약 1.3MB · 안드로이드 휴대폰 전용</small></div><span class="icon-btn">받기</span></a>
+    <p class="muted small" style="margin:6px 0 0">받은 파일을 눌러 설치해요. "출처를 알 수 없는 앱" 허용을 물으면 이 브라우저에 허용해 주세요.
+    나중에 플레이스토어 버전이 나오면, 이 앱을 지우고 스토어에서 다시 설치해 주세요.</p></div>`}
   <div class="card"><h2>📚 알아보기</h2>
     ${link("/guide.html", "사용 설명서")}${link("/ai-probability.html", "AI 확률은 어떻게 계산하나요?")}${link("/hit-rate.html", "적중률 보는 법")}
     ${link("/research.html", "연구 기록 (무엇을 시험했나)")}${link("/faq.html", "자주 묻는 질문")}</div>
