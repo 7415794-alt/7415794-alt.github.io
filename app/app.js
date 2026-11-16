@@ -1,11 +1,12 @@
-/* 스톡시그널 앱 v2.1.0
+/* 스톡시그널 앱 v2.2.0
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.1.0";
+const VERSION = "2.2.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
+const IDXP = QS.get("idx") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/idx/index.json";
 const HS = [1, 5, 20];
 const ALERT = ["", "투자주의", "투자경고", "투자위험"];
 const ROLE = { L: ["👑", "시총 대장주"], M: ["🚀", "상승 대장주"], F: ["💰", "수급 대장주"] };
@@ -259,19 +260,25 @@ async function scorecardHtml(compact) {
   if (!card || !card.length) return "";
   const r = card[card.length - 1];
   const md = (x) => `${+x.slice(5, 7)}/${+x.slice(8, 10)}`;
+  const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   if (compact) {
-    return `<a class="follow" href="#/rank?up">📋 어제 AI 성적표: 상승 TOP 20 중 <b class="up">${r.up_hit}개</b> 실제 상승
-      <small class="muted">(전체 종목은 ${Math.round(r.all_up * 100)}% 상승 · ${md(r.date)}→${md(r.eval_date)})</small></a>`;
+    return `<a class="card" href="#/rank?up" style="display:block"><h2>📋 어제 AI 성적표 <small>${md(r.date)} 예측 → ${md(r.eval_date)} 결과 ›</small></h2>
+      <div class="split">
+      ${r.all_n ? `<div class="stat"><small>전 종목 적중률</small><b>${pc(r.all_hit, r.all_n)}%</b><div class="small muted">${won(r.all_n)}개 중 ${won(r.all_hit)}개 맞힘</div></div>` : ""}
+      <div class="stat"><small>📈 상승 TOP 20</small><b>${pc(r.up_hit, r.up_n)}%</b><div class="small muted">${r.up_n}개 중 ${r.up_hit}개 실제 상승</div></div>
+      <div class="stat"><small>📉 하락 TOP 20</small><b>${pc(r.down_hit, r.down_n)}%</b><div class="small muted">${r.down_n}개 중 ${r.down_hit}개 실제 하락</div></div></div>
+      <p class="muted small" style="margin:8px 0 0">${r.all_n ? "전 종목 적중률 = '1거래일 뒤' 확률이 50% 이상이면 오른다, 미만이면 내린다로 보고 실제와 맞은 비율. " : ""}비교용: 그날 전체 종목 중 ${Math.round(r.all_up * 100)}%가 올랐어요.</p></a>`;
   }
   const last = card.slice(-20);
   const sum = (k) => last.reduce((a, x) => a + x[k], 0);
   return `<div class="card"><h2>📋 어제 AI 성적표 <small>${md(r.date)} 예측 → ${md(r.eval_date)} 결과</small></h2><div class="split">
+    ${r.all_n ? `<div class="stat"><small>🎯 전 종목 적중률</small><b>${pc(r.all_hit, r.all_n)}%</b><div class="small muted">${won(r.all_n)}개 중 ${won(r.all_hit)}개 맞힘</div></div>` : ""}
     <div class="stat"><small>📈 상승 TOP 20</small><b>${r.up_hit}개 올랐어요</b><div class="small muted">${Math.round(r.up_hit / r.up_n * 100)}% 적중 · 평균 <span class="${cls(r.up_avg)}">${pctTxt(r.up_avg * 100, 1)}</span></div></div>
     <div class="stat"><small>📉 하락 TOP 20</small><b>${r.down_hit}개 내렸어요</b><div class="small muted">${Math.round(r.down_hit / r.down_n * 100)}% 적중 · 평균 ${pctTxt(r.down_avg * 100, 1)}</div></div>
     <div class="stat"><small>전체 종목 (비교용)</small><b>${Math.round(r.all_up * 100)}% 올랐어요</b><div class="small muted">평균 ${pctTxt(r.all_avg * 100, 1)}</div></div>
     ${card.length >= 2 ? `<div class="stat"><small>최근 ${last.length}일 평균</small><b>${Math.round(sum("up_hit") / sum("up_n") * 100)}% 적중</b><div class="small muted">상승 TOP 20 기준 · 전체 ${Math.round(sum("all_up") / last.length * 100)}%</div></div>` : ""}</div>
-    ${card.length >= 2 ? `<details style="margin-top:8px"><summary class="small">날짜별 성적 보기</summary><table><tr><th>예측일</th><th class="r">상승 TOP 20</th><th class="r">하락 TOP 20</th><th class="r">전체 상승</th></tr>
-      ${[...card].reverse().slice(0, 30).map((x) => `<tr><td>${md(x.date)}</td><td class="r">${x.up_hit}/${x.up_n}</td><td class="r">${x.down_hit}/${x.down_n}</td><td class="r">${Math.round(x.all_up * 100)}%</td></tr>`).join("")}</table></details>` : ""}
+    ${card.length >= 2 ? `<details style="margin-top:8px"><summary class="small">날짜별 성적 보기</summary><table><tr><th>예측일</th><th class="r">전 종목</th><th class="r">상승 TOP 20</th><th class="r">하락 TOP 20</th><th class="r">전체 상승</th></tr>
+      ${[...card].reverse().slice(0, 30).map((x) => `<tr><td>${md(x.date)}</td><td class="r">${x.all_n ? pc(x.all_hit, x.all_n) + "%" : "-"}</td><td class="r">${x.up_hit}/${x.up_n}</td><td class="r">${x.down_hit}/${x.down_n}</td><td class="r">${Math.round(x.all_up * 100)}%</td></tr>`).join("")}</table></details>` : ""}
     <p class="muted small">어제 '1거래일 뒤' 상승 확률 TOP 20 종목이 오늘 실제로 올랐는지(하락 TOP 20은 내렸는지) 매일 채점해요. 전체 종목 상승 비율보다 높아야 AI가 의미 있게 고른 거예요.</p></div>`;
 }
 
@@ -364,15 +371,43 @@ function favList(limit, del) {
   }).join("") + (META && META.prev_date ? `<p class="muted small">어제보다 AI 확률이 많이 바뀐 종목이 위로 와요. 🔥 = 5%p 이상 변화</p>` : "");
 }
 
+// 코스피·코스닥 오를 확률 (평일 아침, 어젯밤 미국 증시까지 반영해 계산)
+const kstToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const mdOf = (x) => `${+x.slice(5, 7)}/${+x.slice(8, 10)}`;
+const idxHit = (p, r) => (r == null || r === 0 ? null : (p >= 0.5) === (r > 0));
+function idxProb(j, k) {
+  const x = j && j[k];
+  if (!x) return "";
+  const today = kstToday(), pp = Math.round(x.p * 100);
+  const v = LIVEJ && LIVEJ.idx && LIVEJ.idx[k];
+  const liveToday = LIVEJ && LIVEJ.t.slice(0, 10) === today;
+  const mark = (h) => (h == null ? "" : h ? " ✅ 맞음" : " ❌ 틀림");
+  if (x.for === today && v && v[2] !== "OPEN" && liveToday) // 오늘 장이 끝남 → 채점
+    return `<div class="small">🤖 오늘 예측 ${pp}%${mark(idxHit(x.p, v[1]))}</div>`;
+  if (x.for >= today) return `<div class="small">🤖 ${x.for === today ? "오늘" : mdOf(x.for)} 오를 확률 <b class="${x.p >= 0.5 ? "up" : "down"}">${pp}%</b></div>`;
+  const h = (j.hist || []).find((y) => y.k === k && y.for === x.for);
+  return `<div class="small muted">🤖 ${mdOf(x.for)} 예측 ${pp}%${mark(h && idxHit(x.p, h.r))}</div>`;
+}
+function idxNote(j) {
+  if (!j || !j.KOSPI) return "";
+  const today = kstToday();
+  const done = (j.hist || []).filter((y) => y.r != null && y.r !== 0);
+  const hits = done.filter((y) => idxHit(y.p, y.r)).length;
+  const a = (k) => (j[k] ? `${Math.round(j[k].acc * 100)}%` : "-"), b = (k) => (j[k] ? `${Math.round(j[k].base_acc * 100)}%` : "-");
+  const later = j.KOSPI.for <= today && !(j.KOSPI.for === today && marketState().includes("장 중"));
+  return `<p class="muted small" style="margin:8px 0 0">🤖 = AI가 본 '오늘 장 마감이 어제보다 오를 확률'. 어젯밤 미국 증시 마감까지 반영해 평일 아침 7시쯤 계산해요${later ? " (다음 확률은 다음 거래일 아침에 나와요)" : ""}.
+    과거 10년 시험 적중률 코스피 ${a("KOSPI")}·코스닥 ${a("KOSDAQ")} (늘 '오른다'고 하면 ${b("KOSPI")}·${b("KOSDAQ")})${done.length ? ` · 실제 기록 ${done.length}번 중 ${hits}번 맞힘` : ""}.</p>`;
+}
+
 // ───────── 🏠 홈 ─────────
 route(/^\/$/, async () => {
-  await Promise.all([loadIndex(), loadLive()]);
+  const [, , ij] = await Promise.all([loadIndex(), loadLive(), getJSON(IDXP, 600000).catch(() => null)]);
   const idx = (LIVEJ && LIVEJ.idx) || {};
   const mk = ["KOSPI", "KOSDAQ"].map((k) => {
     const v = idx[k];
     return `<div class="stat"><small>${k === "KOSPI" ? "코스피" : "코스닥"}</small>
       <b>${v ? v[0].toLocaleString("ko-KR", { maximumFractionDigits: 2 }) : "-"}</b>
-      <div class="${cls(v && v[1])}">${v ? pctTxt(v[1]) : ""}</div></div>`;
+      <div class="${cls(v && v[1])}">${v ? pctTxt(v[1]) : ""}</div>${idxProb(ij, k)}</div>`;
   }).join("");
   const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !s.halted);
   const top = [...ok].sort((a, b) => b["p" + H] - a["p" + H]).slice(0, 10);
@@ -380,12 +415,13 @@ route(/^\/$/, async () => {
   const sc = await scorecardHtml(true);
   return `
   ${catBar()}
-  <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div></a>
+  <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div>${idxNote(ij)}</a>
+  ${sc}
   <div class="toolbar">${segH()}<span class="muted small">AI 기준일 ${esc(META?.date || "-")}</span></div>
   <div class="card"><h2>⭐ 관심 종목 <a class="small muted" href="#/my">전체 ›</a></h2>${favList(5)}</div>
   <div class="card"><h2>🔥 ${H}일 뒤 상승 확률 TOP 10 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>
     ${top.map((s, i) => stockRow(s, { rank: i + 1, move: "up" })).join("")}
-    <p class="muted small">관리종목·투자주의 종목·거래정지 종목은 뺐어요. 적중 = 최근 60번 예측 중 맞힌 비율. ▲▼ = 어제 순위와 비교.</p>${sc}</div>
+    <p class="muted small">관리종목·투자주의 종목·거래정지 종목은 뺐어요. 적중 = 최근 60번 예측 중 맞힌 비율. ▲▼ = 어제 순위와 비교.</p></div>
   ${rec.length ? `<div class="card"><h2>🕘 최근 본 종목</h2>${rec.map((s) => stockRow(s)).join("")}</div>` : ""}
   <div class="card"><h2>❓ 처음이신가요?</h2>
     <p class="small" style="margin:0">위 검색창에 종목 이름을 넣으면 AI가 1·5·20거래일 뒤 오를 확률을 보여 줘요.
