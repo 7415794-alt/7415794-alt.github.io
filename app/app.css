@@ -97,3 +97,20 @@ input.num{width:100%;border:1px solid var(--line);background:var(--soft);color:v
 .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + 20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(20,24,36,.92);
   color:#fff;padding:8px 14px;border-radius:999px;font-size:13.5px;z-index:50}
 @media (max-width:380px){.logo span{display:none}.hero .big{font-size:40px}}
+.cats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 12px}
+.cats a{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 2px;font-size:12px}
+.cats a b{font-size:20px;line-height:1.2}
+.mv{font-size:11px;font-weight:700;margin-left:5px}
+.mv.new{font-size:12px}
+.sumbox{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:10px}
+.kv3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;text-align:center}
+.kv3 div{background:var(--soft);border-radius:10px;padding:8px 4px}
+.kv3 small{display:block;color:var(--muted);font-size:11.5px}
+.follow{display:block;background:var(--soft);border-radius:10px;padding:9px 12px;font-size:13.5px;margin-top:8px}
+.vs{font-size:14px}
+table.cmp td,table.cmp th{text-align:center}
+table.cmp td:first-child{text-align:left;color:var(--muted);font-size:12.5px}
+table.cmp .win{color:var(--up);font-weight:800}
+table.cmp .lose{color:var(--down)}
+a.more{display:block;color:inherit}
+select.num{appearance:auto}

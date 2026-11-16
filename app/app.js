@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.0.0
+/* 스톡시그널 앱 v2.1.0
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -134,7 +134,7 @@ function stockRow(s, opt = {}) {
   const sub = opt.sub ?? `${s.market === "KOSPI" ? "코스피" : "코스닥"} · ${won(pr.now)}원 <span class="${cls(pr.chg)}">${pctTxt(pr.chg)}</span>`;
   return `<a class="row" href="#/s/${s.code}">
     ${opt.rank ? `<span class="muted small" style="width:22px">${opt.rank}</span>` : ""}
-    <div class="nm"><b>${esc(s.name)}${flags}</b><small>${sub}</small></div>
+    <div class="nm"><b>${esc(s.name)}${flags}${opt.move ? moveTxt(s.code, opt.move) : ""}</b><small>${sub}</small></div>
     <div class="rt">${pill(p)}${hr != null && opt.hr !== false ? `<br><small class="muted">적중 ${Math.round(hr * 100)}%</small>` : ""}</div></a>`;
 }
 
@@ -206,7 +206,163 @@ let afterHooks = [];
 function after(fn) { afterHooks.push(fn); }
 function afterRender() { const hs = afterHooks; afterHooks = []; hs.forEach((f) => f()); }
 const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참고 정보이며 투자 권유가 아니에요. 투자 판단과 책임은 본인에게 있어요.<br>
-  <a href="/disclaimer.html">면책 고지</a> · <a href="/privacy.html">개인정보처리방침</a> · v${VERSION}</p>`;
+  <a href="/disclaimer.html">면책 고지</a> · <a href="/privacy.html">개인정보처리방침</a> · 문의 <a href="mailto:slakeknowledge@gmail.com">slakeknowledge@gmail.com</a> · v${VERSION}</p>`;
+
+// ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
+const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/screen", "🔎", "조건검색"],
+  ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"]];
+const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
+const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
+function marketState() {
+  const v = LIVEJ && LIVEJ.idx && LIVEJ.idx.KOSPI;
+  if (!v) return "";
+  return v[2] === "OPEN" ? "🟢 장 중" : "🔴 장 마감";
+}
+
+// 적중률 순위: 같은 기간 전 종목 중 상위 몇 %
+const hitPool = {};
+function hitTop(hr, h = H) {
+  if (hr == null || !INDEX) return null;
+  if (!hitPool[h]) hitPool[h] = INDEX.map((s) => s["hr" + h]).filter((v) => v != null);
+  const pool = hitPool[h];
+  if (!pool.length) return null;
+  return Math.max(1, Math.round((pool.filter((v) => v > hr).length + 1) / pool.length * 100));
+}
+// 어제 순위와 비교: ▲3 / ▼2 / - / 🆕 (차트 AI 확률 기준, 전 종목)
+const orderMemo = {};
+function orderMap(key, desc) {
+  const id = key + desc;
+  if (!orderMemo[id]) {
+    const l = INDEX.filter((s) => s[key] != null && !s.halted).sort((a, b) => (desc ? b[key] - a[key] : a[key] - b[key]));
+    orderMemo[id] = new Map(l.map((s, i) => [s.code, i + 1]));
+  }
+  return orderMemo[id];
+}
+function moveTxt(code, kind) {
+  if (!META || !META.prev_date) return "";
+  const desc = kind !== "down";
+  const now = orderMap("a" + H, desc).get(code), old = orderMap("q" + H, desc).get(code);
+  if (now == null) return "";
+  if (old == null) return `<span class="mv new">🆕</span>`;
+  const d = old - now;
+  return d > 0 ? `<span class="mv up">▲${d}</span>` : d < 0 ? `<span class="mv down">▼${-d}</span>` : `<span class="mv">-</span>`;
+}
+function newsMood(score) {
+  return score >= 0.3 ? "😀 긍정적" : score >= 0.1 ? "🙂 조금 긍정적" : score <= -0.3 ? "😟 부정적" : score <= -0.1 ? "😕 조금 부정적" : "😐 중립";
+}
+
+// 어제 AI 성적표
+async function scorecardHtml(compact) {
+  let card;
+  try { card = await getJSON(DATA + "scorecard.json", 3600000); } catch { return ""; }
+  if (!card || !card.length) return "";
+  const r = card[card.length - 1];
+  const md = (x) => `${+x.slice(5, 7)}/${+x.slice(8, 10)}`;
+  if (compact) {
+    return `<a class="follow" href="#/rank?up">📋 어제 AI 성적표: 상승 TOP 20 중 <b class="up">${r.up_hit}개</b> 실제 상승
+      <small class="muted">(전체 종목은 ${Math.round(r.all_up * 100)}% 상승 · ${md(r.date)}→${md(r.eval_date)})</small></a>`;
+  }
+  const last = card.slice(-20);
+  const sum = (k) => last.reduce((a, x) => a + x[k], 0);
+  return `<div class="card"><h2>📋 어제 AI 성적표 <small>${md(r.date)} 예측 → ${md(r.eval_date)} 결과</small></h2><div class="split">
+    <div class="stat"><small>📈 상승 TOP 20</small><b>${r.up_hit}개 올랐어요</b><div class="small muted">${Math.round(r.up_hit / r.up_n * 100)}% 적중 · 평균 <span class="${cls(r.up_avg)}">${pctTxt(r.up_avg * 100, 1)}</span></div></div>
+    <div class="stat"><small>📉 하락 TOP 20</small><b>${r.down_hit}개 내렸어요</b><div class="small muted">${Math.round(r.down_hit / r.down_n * 100)}% 적중 · 평균 ${pctTxt(r.down_avg * 100, 1)}</div></div>
+    <div class="stat"><small>전체 종목 (비교용)</small><b>${Math.round(r.all_up * 100)}% 올랐어요</b><div class="small muted">평균 ${pctTxt(r.all_avg * 100, 1)}</div></div>
+    ${card.length >= 2 ? `<div class="stat"><small>최근 ${last.length}일 평균</small><b>${Math.round(sum("up_hit") / sum("up_n") * 100)}% 적중</b><div class="small muted">상승 TOP 20 기준 · 전체 ${Math.round(sum("all_up") / last.length * 100)}%</div></div>` : ""}</div>
+    ${card.length >= 2 ? `<details style="margin-top:8px"><summary class="small">날짜별 성적 보기</summary><table><tr><th>예측일</th><th class="r">상승 TOP 20</th><th class="r">하락 TOP 20</th><th class="r">전체 상승</th></tr>
+      ${[...card].reverse().slice(0, 30).map((x) => `<tr><td>${md(x.date)}</td><td class="r">${x.up_hit}/${x.up_n}</td><td class="r">${x.down_hit}/${x.down_n}</td><td class="r">${Math.round(x.all_up * 100)}%</td></tr>`).join("")}</table></details>` : ""}
+    <p class="muted small">어제 '1거래일 뒤' 상승 확률 TOP 20 종목이 오늘 실제로 올랐는지(하락 TOP 20은 내렸는지) 매일 채점해요. 전체 종목 상승 비율보다 높아야 AI가 의미 있게 고른 거예요.</p></div>`;
+}
+
+// 선 그래프 여러 개 (AI 확률 변화, AI 따라 했다면, 시장 지수, 비교)
+function drawLines(cv, labels, series, opt = {}) {
+  if (!cv || !labels.length) return;
+  const css = getComputedStyle(document.documentElement);
+  const col = (v) => (v.startsWith("--") ? css.getPropertyValue(v).trim() : v);
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = opt.h || 200;
+  cv.width = W * dpr; cv.height = Hh * dpr; cv.style.height = Hh + "px";
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  const pad = { l: 4, r: 48, t: 8, b: 18 }, ph = Hh - pad.t - pad.b;
+  const rng = {};
+  for (const s of series) {
+    const k = s.scale || "a";
+    const v = s.v.filter((x) => x != null);
+    if (!v.length) continue;
+    rng[k] = rng[k] || [Infinity, -Infinity];
+    rng[k][0] = Math.min(rng[k][0], ...v); rng[k][1] = Math.max(rng[k][1], ...v);
+  }
+  if (opt.fixA) rng.a = opt.fixA;
+  for (const k in rng) if (rng[k][0] === rng[k][1]) { rng[k][0] -= 1; rng[k][1] += 1; }
+  const x = (i) => pad.l + (W - pad.l - pad.r) * (labels.length === 1 ? 0.5 : i / (labels.length - 1));
+  const y = (v, k) => pad.t + ph * (1 - (v - rng[k][0]) / (rng[k][1] - rng[k][0]));
+  g.font = "11px sans-serif"; g.strokeStyle = col("--line"); g.fillStyle = col("--muted"); g.lineWidth = 1;
+  if (rng.a) for (let i = 0; i <= 3; i++) {
+    const v = rng.a[0] + (rng.a[1] - rng.a[0]) * i / 3, yy = y(v, "a");
+    g.beginPath(); g.moveTo(pad.l, yy); g.lineTo(W - pad.r, yy); g.stroke();
+    g.fillText(opt.fmt ? opt.fmt(v) : Math.round(v).toLocaleString("ko-KR"), W - pad.r + 4, yy + 4);
+  }
+  if (opt.ref != null && rng.a) {
+    g.setLineDash([3, 3]); g.strokeStyle = col("--muted"); g.beginPath();
+    g.moveTo(pad.l, y(opt.ref, "a")); g.lineTo(W - pad.r, y(opt.ref, "a")); g.stroke(); g.setLineDash([]);
+  }
+  for (const s of series) {
+    const k = s.scale || "a";
+    if (!rng[k]) continue;
+    g.strokeStyle = col(s.color); g.lineWidth = s.w || 2; g.beginPath();
+    let on = false;
+    s.v.forEach((v, i) => { if (v == null) return; on ? g.lineTo(x(i), y(v, k)) : g.moveTo(x(i), y(v, k)); on = true; });
+    g.stroke();
+  }
+  g.fillStyle = col("--muted");
+  g.fillText(ymd(labels[0]), pad.l, Hh - 4);
+  const last = ymd(labels[labels.length - 1]);
+  g.fillText(last, W - pad.r - g.measureText(last).width, Hh - 4);
+}
+const legend = (items) => `<p class="muted small">${items.map(([c, t]) => `<span style="color:${c}">━</span> ${t}`).join(" · ")}</p>`;
+
+// AI vs 나 (오른다/내린다 찍기) · 내가 산 종목 — 이 휴대폰에만 저장
+(function importOldMore() {
+  try {
+    if (localStorage.getItem("ss-hold") == null) {
+      const h = (localStorage.getItem("stock-ai-hold") || "").split(",").map((x) => x.split("~"))
+        .filter((p) => p.length === 4 && /^\d{6}/.test(p[0])).map((p) => [p[0].slice(0, 6), p[1], +p[2], +p[3]]);
+      store.set("ss-hold", h);
+    }
+    if (localStorage.getItem("ss-votes") == null) {
+      const v = (localStorage.getItem("stock-ai-votes") || "").split(",").map((x) => x.split("~"))
+        .filter((p) => p.length === 7 && /^\d{6}/.test(p[0])).map((p) => [p[0].slice(0, 6), p[1], +p[2], p[3], +p[4], p[5], +p[6]]);
+      store.set("ss-votes", v);
+    }
+    if (localStorage.getItem("ss-recent") == null) store.set("ss-recent", codesFrom(localStorage.getItem("stock-ai-recent")));
+  } catch { /* 예전 기록 없음 */ }
+})();
+const votes = () => store.get("ss-votes", []);
+function addVote(code, name, h, price, me, ai) {
+  const v = votes().filter((x) => !(x[0] === code && x[2] === h && x[3] === todayKST()));
+  v.unshift([code, name, h, todayKST(), price, me, ai]);
+  store.set("ss-votes", v.slice(0, 60));
+}
+const holds = () => store.get("ss-hold", []);
+
+// 관심 종목: 어제보다 AI 확률이 많이 바뀐 종목을 위로 (🔥 = 5%p 이상)
+function favList(limit, del) {
+  const rows = favs().map((c) => BYCODE.get(c)).filter(Boolean).map((s) => {
+    const a = s["a" + H], q = s["q" + H];
+    return [s, a != null && q != null ? (a - q) * 100 : null];
+  });
+  if (!rows.length) return `<div class="muted small">아직 관심 종목이 없어요. 종목 화면 오른쪽 위 ☆를 누르면 여기에 모여요.</div>`;
+  rows.sort((x, y) => (y[1] == null ? 0 : Math.abs(y[1])) - (x[1] == null ? 0 : Math.abs(x[1])));
+  return rows.slice(0, limit || 99).map(([s, d]) => {
+    const pr = priceOf(s);
+    let chg = "";
+    if (d != null) chg = Math.abs(d) < 0.05 ? " · 어제와 같음" : ` · 어제보다 <span class="${cls(d)}">${d > 0 ? "▲" : "▼"}${Math.abs(d).toFixed(1)}%p</span>`;
+    const row = stockRow(s, { sub: `${Math.abs(d || 0) >= 5 ? "🔥 " : ""}${won(pr.now)}원 <span class="${cls(pr.chg)}">${pctTxt(pr.chg)}</span>${chg}` });
+    return del ? `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0">${row}</div>
+      <button class="icon-btn" data-del="${s.code}" aria-label="빼기" style="padding:4px 8px">✕</button></div>` : row;
+  }).join("") + (META && META.prev_date ? `<p class="muted small">어제보다 AI 확률이 많이 바뀐 종목이 위로 와요. 🔥 = 5%p 이상 변화</p>` : "");
+}
 
 // ───────── 🏠 홈 ─────────
 route(/^\/$/, async () => {
@@ -220,16 +376,16 @@ route(/^\/$/, async () => {
   }).join("");
   const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !s.halted);
   const top = [...ok].sort((a, b) => b["p" + H] - a["p" + H]).slice(0, 10);
-  const fav = favs().map((c) => BYCODE.get(c)).filter(Boolean);
   const rec = store.get("ss-recent", []).map((c) => BYCODE.get(c)).filter(Boolean).slice(0, 5);
+  const sc = await scorecardHtml(true);
   return `
-  <div class="card"><h2>📊 오늘 시장 <small>${esc(liveLabel())}</small></h2><div class="mkt">${mk}</div></div>
+  ${catBar()}
+  <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div></a>
   <div class="toolbar">${segH()}<span class="muted small">AI 기준일 ${esc(META?.date || "-")}</span></div>
-  <div class="card"><h2>⭐ 내 종목 <a class="small muted" href="#/my">전체 ›</a></h2>
-    ${fav.length ? fav.slice(0, 5).map((s) => stockRow(s)).join("") : `<div class="muted small">종목 화면에서 ☆를 누르면 여기에 모여요.</div>`}</div>
-  <div class="card"><h2>🔥 ${H}일 뒤 상승 확률 TOP 10 <a class="small muted" href="#/rank">더 보기 ›</a></h2>
-    ${top.map((s, i) => stockRow(s, { rank: i + 1 })).join("")}
-    <p class="muted small">관리종목·투자주의 종목·거래정지 종목은 뺐어요. 적중 = 최근 60번 예측 중 맞힌 비율.</p></div>
+  <div class="card"><h2>⭐ 관심 종목 <a class="small muted" href="#/my">전체 ›</a></h2>${favList(5)}</div>
+  <div class="card"><h2>🔥 ${H}일 뒤 상승 확률 TOP 10 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>
+    ${top.map((s, i) => stockRow(s, { rank: i + 1, move: "up" })).join("")}
+    <p class="muted small">관리종목·투자주의 종목·거래정지 종목은 뺐어요. 적중 = 최근 60번 예측 중 맞힌 비율. ▲▼ = 어제 순위와 비교.</p>${sc}</div>
   ${rec.length ? `<div class="card"><h2>🕘 최근 본 종목</h2>${rec.map((s) => stockRow(s)).join("")}</div>` : ""}
   <div class="card"><h2>❓ 처음이신가요?</h2>
     <p class="small" style="margin:0">위 검색창에 종목 이름을 넣으면 AI가 1·5·20거래일 뒤 오를 확률을 보여 줘요.
@@ -311,6 +467,74 @@ route(/^\/s\/(\d{6})/, async (code) => {
       <br><small>${esc(n.src)} · ${esc(n.w.slice(5))}</small></a>`).join("") : `<div class="muted small">최근 뉴스가 없어요.</div>`}
     <p class="muted small">호재·악재는 기사 제목의 단어로 AI가 판단했어요.</p></div>`;
 
+  // 한 줄 요약 + 핵심 3가지 + AI 따라 했다면
+  const top = hitTop(hr != null && ST.n >= 60 ? hr : null);
+  const nscore = ((d.prob["1"] || d.prob[1] || {}).news || 0) / 0.06;
+  const mood = d.news && d.news.length ? newsMood(nscore) : "없음";
+  const FL = (d.follow || {})[H] || (d.follow || {})[String(H)];
+  let sumHtml = "";
+  if (P) {
+    const up = P.p * 100;
+    const dir = up >= 55 ? "오를 가능성을 더 높게" : up <= 45 ? "내릴 가능성을 더 높게" : "오를지 내릴지 비슷하게";
+    const hitTxt = top == null ? (hr != null ? `최근 ${ST.n}번 중 ${Math.round(hr * 100)}%를 맞혔어요.` : "")
+      : top <= 30 ? `최근 적중률이 전체 종목 중 <b>상위 ${top}%</b>로 좋은 편이에요.`
+      : top >= 70 ? `다만 최근 적중률이 전체 종목 중 <b>상위 ${top}%</b>(하위권)라 참고만 하세요.`
+      : `최근 적중률은 전체 종목 중 상위 ${top}%로 중간 정도예요.`;
+    sumHtml = `<div class="sumbox">💡 AI는 이 종목이 ${H}거래일 뒤 <b>${dir}</b> 보고 있어요. ${hitTxt}</div>
+      <div class="kv3"><div><small>최근 적중률</small><b>${hr != null ? Math.round(hr * 100) + "%" : "-"}</b></div>
+      <div><small>적중률 순위</small><b>${top ? `상위 ${top}%` : "-"}</b></div><div><small>뉴스</small><b>${esc(mood.split(" ").pop())}</b></div></div>
+      ${FL ? `<div class="follow">🧪 최근 1년 <b>AI 따라 했다면 <span class="${cls(FL.s)}">${pctTxt(FL.s * 100, 1)}</span></b> · 그냥 갖고 있었다면 ${pctTxt(FL.hd * 100, 1)} <small class="muted">(자세히: AI 성적)</small></div>` : ""}`;
+  }
+
+  // AI vs 나
+  const myVote = votes().find((v) => v[0] === code && v[2] === H && v[3] === todayKST());
+  const voteHtml = !P ? "" : myVote
+    ? `<div class="card vs">🗳 <b>AI vs 나</b> · 나: <b>${myVote[5] === "u" ? "📈 오른다" : "📉 내린다"}</b> · AI: <b>${myVote[6] >= 50 ? "📈 오른다" : "📉 내린다"}</b> (${myVote[6]}%)
+       <br><small class="muted">${H}거래일 뒤 누가 맞혔는지 💼 내 종목 화면에서 채점해요.</small></div>`
+    : `<div class="card"><b>🗳 AI vs 나</b> · <span class="small">${H}거래일 뒤 이 종목, 나는 어떻게 생각해요?</span>
+       <div class="split" style="margin-top:8px"><button class="more" data-vote="u">📈 오른다</button><button class="more" data-vote="d">📉 내린다</button></div></div>`;
+
+  // AI 확률 변화 · 따라 했다면 · 최근 10번
+  const trAll = d.track[H] || d.track[String(H)] || [];
+  const last10 = trAll.slice(-11, -1).reverse();
+  const moreAi = `<details id="aibox" style="margin-top:10px"><summary>📊 AI 확률 변화 · 따라 했다면 · 최근 예측 표</summary>
+    <p class="small" style="margin:8px 0 2px"><b>📈 AI 확률 변화 (최근 ${trAll.length}거래일)</b></p><canvas id="pchart"></canvas>
+    ${legend([["var(--up)", "상승 확률(왼쪽 %)"], ["#9aa3b5", "주가"]])}
+    <p class="muted small">선이 50% 위면 AI가 '상승', 아래면 '하락'으로 본 날이에요. 그날까지의 자료로만 계산한 확률이에요(뉴스 미반영).</p>
+    ${FL ? `<p class="small" style="margin:10px 0 2px"><b>🧪 AI 따라 했다면? (최근 1년)</b></p>
+      <div class="split"><div class="stat"><small>AI 따라 했다면</small><b class="${cls(FL.s)}">${pctTxt(FL.s * 100, 1)}</b><div class="small muted">${FL.n}번 중 ${FL.b}번 삼</div></div>
+      <div class="stat"><small>그냥 갖고 있었다면</small><b class="${cls(FL.hd)}">${pctTxt(FL.hd * 100, 1)}</b><div class="small muted">비교용</div></div></div>
+      <canvas id="fchart"></canvas>${legend([["var(--up)", "AI 따라 하기"], ["#9aa3b5", "그냥 보유"]])}
+      <p class="muted small">${H}거래일마다 AI가 '상승'(50% 이상)이면 사서 ${H}거래일 들고 있고, '하락'이면 쉬었다고 가정했어요. 수수료·세금은 빼지 않았고 과거 결과일 뿐이에요.</p>` : ""}
+    ${last10.length ? `<p class="small" style="margin:10px 0 2px"><b>🎯 최근 10번 예측</b></p><table><tr><th>날짜</th><th>AI 예측</th><th class="r">실제</th><th class="r">결과</th></tr>
+      ${last10.map(([dt, p, r]) => `<tr><td>${ymd(dt).slice(3)}</td><td>${p >= 0.5 ? "📈" : "📉"} ${Math.round(p * 100)}%</td><td class="r ${cls(r)}">${r == null ? "-" : pctTxt(r * 100, 1)}</td>
+        <td class="r">${r == null ? "⏳" : (p >= 0.5) === (r > 0) ? "✅" : "❌"}</td></tr>`).join("")}</table>
+      <p class="muted small">상승 확률 50% 이상이면 '상승' 예측이에요. 예측한 날 종가와 ${H}거래일 뒤 종가를 비교해요. ⏳ = 아직 기간이 안 끝남.</p>` : ""}</details>`;
+
+  // 증권사 목표주가 · 외국인/기관 매매 · 실적 발표 일정 · 기본 정보
+  const info = d.info || {};
+  const infoHtml = Object.keys(info).length ? `<div class="fin">${Object.entries(info).map(([k, v]) => `<div class="stat"><small>${esc(k)}</small><b style="font-size:14px">${esc(v)}</b></div>`).join("")}</div>` : "";
+  let consHtml = `<p class="muted small">이 종목은 증권사 목표주가가 없어요. (작은 회사는 분석하는 증권사가 없는 경우가 많아요)</p>`;
+  if (d.cons && d.cons.target) {
+    const gap = d.cons.target / pr.now - 1;
+    consHtml = `<div class="split"><div class="stat"><small>평균 목표주가</small><b>${won(d.cons.target)}원</b><div class="small muted">${esc(d.cons.date || "")}</div></div>
+      <div class="stat"><small>현재가 대비</small><b class="${cls(gap)}">${pctTxt(gap * 100, 1)}</b><div class="small muted">${gap > 0 ? "더 오를 여지" : "이미 목표 넘음"}</div></div>
+      <div class="stat"><small>투자의견</small><b>${esc(d.cons.op)}</b><div class="small muted">증권사 평균</div></div></div>
+      <p class="muted small">증권사 애널리스트 목표주가 평균(네이버 증권)이에요. 자주 바뀌고 틀리는 경우도 많으니 참고만 하세요.</p>`;
+  }
+  const deal = d.deal || [];
+  const dealHtml = deal.length ? `<div class="split">${["외국인", "기관", "개인"].map((w, i) => {
+    const s = deal.reduce((a, r) => a + (r[i + 1] || 0), 0);
+    return `<div class="stat"><small>${w}</small><b class="${cls(s)}">${s > 0 ? "+" : ""}${won(s)}주</b><div class="small muted">최근 ${deal.length}거래일 · ${s > 0 ? "샀어요" : s < 0 ? "팔았어요" : "그대로"}</div></div>`;
+  }).join("")}</div><table style="margin-top:6px"><tr><th>날짜</th><th class="r">외국인</th><th class="r">기관</th><th class="r">개인</th></tr>
+    ${[...deal].reverse().map((r) => `<tr><td>${ymd(r[0]).slice(3)}</td>${[1, 2, 3].map((i) => `<td class="r ${cls(r[i])}">${r[i] > 0 ? "+" : ""}${won(r[i])}</td>`).join("")}</tr>`).join("")}</table>
+    <p class="muted small">+ = 산 주식이 더 많음(순매수), − = 판 주식이 더 많음(순매도). 네이버 증권 자료, 오후 5시 기준.</p>` : `<p class="muted small">매매 정보가 없어요.</p>`;
+  let irHtml = `<p class="muted small">알려진 일정이 없어요.</p>`;
+  if (d.ir) {
+    const dd = Math.round((new Date(d.ir[1]) - new Date(todayKST())) / 864e5);
+    irHtml = `<p class="small">📢 ${esc(d.ir[0])} · <b>${esc(d.ir[1])}</b> (${dd === 0 ? "오늘" : dd > 0 ? "D-" + dd : "지난 일정"})</p>`;
+  }
+
   // 기업 정보
   const f = d.fin || {};
   const n = (k) => (f[k] == null ? null : parseFloat(String(f[k]).replace(/,/g, "")));
@@ -320,9 +544,14 @@ route(/^\/s\/(\d{6})/, async (code) => {
   const prop = n("propertyTotal"), debt = n("debtTotal");
   if (prop && debt != null && prop - debt > 0) finItems.push(["부채비율", debt / (prop - debt) * 100, (v) => v.toFixed(0) + "%"]);
   if (n("sales")) finItems.push(["매출액", n("sales"), (v) => (v >= 10000 ? (v / 10000).toFixed(1) + "조" : v.toLocaleString("ko-KR") + "억")]);
-  const finHtml = finItems.some((x) => x[1] != null && !isNaN(x[1])) ? `<div class="card"><h2>🏢 기업 정보</h2><div class="fin">${finItems.filter((x) => x[1] != null && !isNaN(x[1]))
-    .map(([k, v, fm]) => `<div class="stat"><small>${k}</small><b style="font-size:15px">${fm(v)}</b></div>`).join("")}</div>
-    <p class="muted small">네이버 증권 최근 결산 기준. AI 확률 계산에는 쓰지 않는 참고 정보예요.</p></div>` : "";
+  const finRows = finItems.filter((x) => !(x[0] in info));
+  const finGrid = finRows.some((x) => x[1] != null && !isNaN(x[1])) ? `<p class="small" style="margin:10px 0 4px"><b>📑 실적·재무</b></p><div class="fin">${finRows.filter((x) => x[1] != null && !isNaN(x[1]))
+    .map(([k, v, fm]) => `<div class="stat"><small>${k}</small><b style="font-size:15px">${fm(v)}</b></div>`).join("")}</div>` : "";
+  const finHtml = `<div class="card"><h2>🏢 기업 정보</h2>${infoHtml}${finGrid}
+    <p class="small" style="margin:12px 0 4px"><b>🎯 증권사 목표주가</b></p>${consHtml}
+    <p class="small" style="margin:12px 0 4px"><b>🧑‍🤝‍🧑 외국인·기관 매매</b></p>${dealHtml}
+    <p class="small" style="margin:12px 0 4px"><b>📅 실적 발표 일정</b></p>${irHtml}
+    <p class="muted small">네이버 증권 자료(매일 오후 5시 기준). 적자 기업은 PER이 '-'로 나와요. AI 확률 계산에는 쓰지 않는 참고 정보예요.</p></div>`;
 
   after(() => {
     drawChart($("#chart"), d.chart, store.get("ss-range", 120));
@@ -334,6 +563,21 @@ route(/^\/s\/(\d{6})/, async (code) => {
       drawChart($("#chart"), d.chart, +b.dataset.range);
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
+    document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = () => {
+      addVote(code, d.name, H, pr.now, b.dataset.vote, Math.round(P.p * 100));
+      toast("찍었어요! 기간이 지나면 내 종목 화면에서 채점해요");
+      render();
+    });
+    $("#aibox").addEventListener("toggle", (e) => {
+      if (!e.target.open) return;
+      const cmap = new Map(d.chart.d.map((x, i) => [x, d.chart.c[i]]));
+      drawLines($("#pchart"), trAll.map((r) => r[0]), [
+        { v: trAll.map((r) => cmap.get(r[0]) ?? null), color: "#9aa3b5", w: 1, scale: "b" },
+        { v: trAll.map((r) => r[1] * 100), color: "--up", w: 2 }], { fixA: [0, 100], ref: 50, fmt: (v) => Math.round(v) + "%", h: 190 });
+      if (FL) drawLines($("#fchart"), FL.c.map((r) => r[0]), [
+        { v: FL.c.map((r) => r[2] * 100), color: "#9aa3b5", w: 1 }, { v: FL.c.map((r) => r[1] * 100), color: "--up", w: 2 }],
+        { ref: 0, fmt: (v) => Math.round(v) + "%", h: 180 });
+    });
   });
   const rg = store.get("ss-range", 120);
   return `
@@ -345,10 +589,12 @@ route(/^\/s\/(\d{6})/, async (code) => {
       <small class="muted">${pr.live ? esc(liveLabel()) : `${esc(d.date)} 종가`}</small></div>
   </div>
   <div class="card"><div style="text-align:center;margin-bottom:6px">${segH()}</div>${probHtml}
-    <p class="muted small" style="text-align:center">AI 기준일 ${esc(d.date)} 종가 · 매일 오후 5시 새로 계산</p></div>
+    <p class="muted small" style="text-align:center">AI 기준일 ${esc(d.date)} 종가 · 매일 오후 5시 새로 계산</p>${sumHtml}
+    <a class="more" href="#/cmp?${code}-" style="text-align:center">🆚 다른 종목과 비교하기</a></div>
   <div class="card"><h2>📈 주가 <span class="seg">${[[60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
     <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo">선 = 종가 · <span style="color:#f59e0b">주황</span> 20일 평균 · <span style="color:#8b5cf6">보라</span> 60일 평균 · 아래 막대 = 거래량</p></div>
-  <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}</div>
+  ${voteHtml}
+  <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
   ${flHtml}${thHtml}${newsHtml}${finHtml}
   <div class="card"><details id="indbox"><summary>🧮 AI가 본 지표 50가지</summary><div id="indt" class="loading">불러오는 중…</div></details></div>
   ${foot()}`;
@@ -481,7 +727,10 @@ async function indTable(d) {
 // ───────── 🏆 순위 ─────────
 let rankState = store.get("ss-rank", { by: "up", mkt: "ALL", safe: true });
 let rankShow = 50;
-route(/^\/rank/, async () => {
+route(/^\/rank(?:\?(\w+))?/, async (by) => {
+  if (by === "hit") by = "best";
+  if (by && ["up", "down", "best", "worst"].includes(by) && by !== rankState.by) { rankState.by = by; rankShow = 50; store.set("ss-rank", rankState); }
+  if (!["up", "down", "best", "worst"].includes(rankState.by)) rankState.by = "up";
   await Promise.all([loadIndex(), loadLive()]);
   const k = "p" + H, hk = "hr" + H;
   let list = INDEX.filter((s) => s[k] != null && !s.halted);
@@ -489,23 +738,32 @@ route(/^\/rank/, async () => {
   if (rankState.safe) list = list.filter((s) => !s.managed && !s.alert);
   if (rankState.by === "up") list.sort((a, b) => b[k] - a[k]);
   else if (rankState.by === "down") list.sort((a, b) => a[k] - b[k]);
-  else list = list.filter((s) => s[hk] != null).sort((a, b) => b[hk] - a[hk] || Math.abs(b[k] - 0.5) - Math.abs(a[k] - 0.5));
+  else {
+    list = list.filter((s) => s[hk] != null).sort((a, b) => b[hk] - a[hk] || Math.abs(b[k] - 0.5) - Math.abs(a[k] - 0.5));
+    if (rankState.by === "worst") list.reverse();
+  }
+  const sc = rankState.by === "up" ? await scorecardHtml(false) : "";
+  const mv = ["up", "down"].includes(rankState.by) ? rankState.by : null;
   const seg = (name, opts, cur) => `<div class="seg" data-rk="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${v === cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
   after(() => {
     document.querySelectorAll("[data-rk] button").forEach((b) => b.onclick = () => {
-      rankState[b.parentElement.dataset.rk] = b.dataset.v; store.set("ss-rank", rankState); rankShow = 50; render();
+      const key = b.parentElement.dataset.rk;
+      rankState[key] = b.dataset.v; store.set("ss-rank", rankState); rankShow = 50;
+      if (key === "by") location.hash = `#/rank?${b.dataset.v}`; else render();
     });
     $("#safe").onchange = (e) => { rankState.safe = e.target.checked; store.set("ss-rank", rankState); render(); };
     const m = $("#rkmore"); if (m) m.onclick = () => { rankShow += 50; render(); };
   });
-  const title = { up: "오를 확률 높은 순", down: "내릴 확률 높은 순", hit: "AI 적중률 높은 순" }[rankState.by];
-  return `<div class="toolbar">${seg("by", [["up", "상승"], ["down", "하락"], ["hit", "적중률"]], rankState.by)}${segH()}</div>
+  const title = { up: "📈 오를 확률 높은 순", down: "📉 내릴 확률 높은 순", best: "🥇 AI 적중률 높은 순", worst: "🥶 AI 적중률 낮은 순" }[rankState.by];
+  return `<div class="toolbar">${seg("by", [["up", "🏆 상승"], ["down", "하락"], ["best", "🎯 적중 상위"], ["worst", "적중 하위"]], rankState.by)}</div>
+  <div class="toolbar">${segH()}<a class="chip" href="#/screen">🔎 조건검색 ›</a></div>
   <div class="toolbar">${seg("mkt", [["ALL", "전체"], ["KOSPI", "코스피"], ["KOSDAQ", "코스닥"]], rankState.mkt)}
     <label class="ck"><input type="checkbox" id="safe" ${rankState.safe ? "checked" : ""}> 관리·주의 종목 빼기</label></div>
   <div class="card"><h2>${H}일 뒤 ${title} <small>${list.length.toLocaleString("ko-KR")}종목</small></h2>
-    ${list.slice(0, rankShow).map((s, i) => stockRow(s, { rank: i + 1 })).join("")}
+    ${list.slice(0, rankShow).map((s, i) => stockRow(s, { rank: i + 1, move: mv })).join("")}
     ${list.length > rankShow ? `<button class="more" id="rkmore">50개 더 보기</button>` : ""}
-    <p class="muted small">확률 = AI + 뉴스 + 테마 소식 반영 · 적중 = 최근 60번 예측 중 맞힌 비율 · AI 기준일 ${esc(META?.date || "-")}</p></div>${foot()}`;
+    <p class="muted small">확률 = AI + 뉴스 + 테마 소식 반영 · 적중 = 최근 60번 예측(50% 이상이면 상승) 중 맞힌 비율${mv && META?.prev_date ? ` · ▲▼ = ${esc(META.prev_date)} 순위와 비교(차트 AI 기준), 🆕 = 새로 들어옴` : ""}
+    · AI 기준일 ${esc(META?.date || "-")}. 높은 순서일 뿐 실제로 오르거나 내린다는 보장은 없어요.</p></div>${sc}${foot()}`;
 }, "rank");
 
 // ───────── 🧩 테마 ─────────
@@ -573,17 +831,227 @@ route(/^\/t\/(\d+)/, async (no) => {
 // ───────── ⭐ 내 종목 ─────────
 route(/^\/my/, async () => {
   await Promise.all([loadIndex(), loadLive()]);
-  const f = favs().map((c) => BYCODE.get(c)).filter(Boolean);
-  after(() => document.querySelectorAll("[data-del]").forEach((b) => b.onclick = (e) => {
-    e.preventDefault(); toggleFav(b.dataset.del); render();
+  // 💼 내가 산 종목
+  const hs = holds();
+  let tb = 0, tn = 0;
+  const hrows = hs.map(([c, name, price, qty]) => {
+    const s = BYCODE.get(c) || { code: c, name };
+    const now = priceOf(s).now;
+    if (now != null) { tb += price * qty; tn += now * qty; }
+    const r = now != null ? now / price - 1 : null;
+    const body = now == null ? "현재가를 못 불러왔어요"
+      : `${r > 0 ? "🔺" : r < 0 ? "🔹" : ""} <b class="${cls(r)}">${pctTxt(r * 100, 1)}</b> (${(now - price) * qty > 0 ? "+" : ""}${won(Math.round((now - price) * qty))}원) · ${won(now)}원`;
+    return `<div style="display:flex;align-items:center;gap:6px"><a class="row" href="#/s/${c}" style="flex:1;min-width:0"><div class="nm"><b>${esc(name)}</b>
+      <small>${body}<br>산 가격 ${won(price)}원 × ${qty.toLocaleString("ko-KR")}주</small></div><div class="rt">${pill(s["p" + H])}</div></a>
+      <button class="icon-btn" data-hdel="${c}" aria-label="빼기" style="padding:4px 8px">✕</button></div>`;
+  }).join("");
+  const gain = tn - tb;
+  const holdHtml = `<div class="card"><h2>💼 내가 산 종목 <small>${hs.length}개 · AI ${H}일 뒤</small></h2>
+    ${tb ? `<div class="split"><div class="stat"><small>지금 가치</small><b>${won(Math.round(tn))}원</b><div class="small muted">산 금액 ${won(Math.round(tb))}원</div></div>
+      <div class="stat"><small>수익</small><b class="${cls(gain)}">${gain > 0 ? "+" : ""}${won(Math.round(gain))}원</b><div class="small ${cls(gain)}">${pctTxt(gain / tb * 100, 1)}</div></div></div>` : ""}
+    ${hrows || `<div class="muted small">아직 넣은 종목이 없어요. 아래에서 추가해 보세요.</div>`}
+    <details ${hs.length ? "" : "open"} style="margin-top:8px"><summary>➕ 종목 추가</summary>
+      <div style="display:grid;gap:6px;margin-top:6px"><input id="hq" class="num" placeholder="종목 이름이나 코드 (예: 삼성전자)">
+      <div class="split"><input id="hp" class="num" type="number" inputmode="decimal" placeholder="산 가격 (1주, 원)"><input id="hn" class="num" type="number" inputmode="decimal" placeholder="수량 (주)"></div>
+      <button class="more" id="hadd">추가하기</button></div></details>
+    <p class="muted small">🔺 수익 · 🔹 손실 · 수수료·세금은 빼지 않았어요. 같은 종목을 또 넣으면 평균 단가로 합쳐요.</p></div>`;
+
+  // 🗳 AI vs 나 채점
+  const vs = votes().slice(0, 20);
+  const res = await Promise.all(vs.map(async (v) => {
+    try {
+      const d = await getJSON(`${DATA}s/${v[0]}.json`);
+      const D = d.chart.d, C = d.chart.c, vd = yymmdd(v[3]);
+      let pos = D.length - 1;
+      while (pos > 0 && D[pos] > vd) pos--;
+      // 찍은 날이 아직 차트에 없는 평일(오늘)이면 그날부터 셈
+      const wd = new Date(v[3] + "T00:00:00").getDay();
+      const end = pos + v[2] + (D[pos] < vd && wd !== 0 && wd !== 6 ? 1 : 0);
+      if (end <= D.length - 1) {
+        const done = D[end] < yymmdd(todayKST()) || marketState() !== "🟢 장 중";
+        return [v, done, C[end] / v[4] - 1, 0];
+      }
+      const now = priceOf(BYCODE.get(v[0]) || { code: v[0], close: C[C.length - 1] }).now;
+      return [v, false, now / v[4] - 1, end - (D.length - 1)];
+    } catch { return null; }
   }));
-  return `<div class="toolbar">${segH()}<span class="muted small">${esc(liveLabel())}</span></div>
-  <div class="card"><h2>⭐ 내 종목 <small>${f.length}개</small></h2>
-  ${f.length ? f.map((s) => `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0">${stockRow(s)}</div>
-    <button class="icon-btn" data-del="${s.code}" aria-label="빼기" style="padding:4px 8px">✕</button></div>`).join("")
-    : `<div class="empty">아직 담은 종목이 없어요.<br>종목 화면 오른쪽 위 ☆를 누르면 여기에 모여요.</div>`}</div>
-  <p class="muted small">내 종목은 이 휴대폰(브라우저)에만 저장돼요. 서버로 보내지 않아요.</p>${foot()}`;
+  const ok = res.filter(Boolean), done = ok.filter((x) => x[1]);
+  let voteHtml = `<p class="muted small">종목 분석 화면에서 '📈 오른다 / 📉 내린다'를 찍어 보세요. 기간이 지나면 나와 AI 중 누가 맞혔는지 여기서 채점해요.</p>`;
+  if (ok.length) {
+    const meHit = done.filter(([v, , r]) => (v[5] === "u") === (r > 0)).length;
+    const aiHit = done.filter(([v, , r]) => (v[6] >= 50) === (r > 0)).length;
+    voteHtml = (done.length ? `<div class="split"><div class="stat"><small>나의 적중률</small><b>${Math.round(meHit / done.length * 100)}%</b><div class="small muted">${done.length}번 중 ${meHit}번</div></div>
+      <div class="stat"><small>AI 적중률</small><b>${Math.round(aiHit / done.length * 100)}%</b><div class="small muted">${meHit > aiHit ? "🏆 내가 이기고 있어요!" : aiHit > meHit ? "🤖 AI가 이기고 있어요" : "🤝 비기고 있어요"}</div></div></div>` : "")
+      + `<table style="margin-top:6px"><tr><th>날짜</th><th>종목</th><th>나</th><th>AI</th><th class="r">결과</th></tr>${ok.map(([v, d2, r, left]) => {
+        const me = v[5] === "u" ? "📈" : "📉", ai = v[6] >= 50 ? "📈" : "📉", real = r > 0 ? "📈" : "📉";
+        const txt = d2 ? `${real} ${pctTxt(r * 100, 1)}<br>나 ${me === real ? "✅" : "❌"} AI ${ai === real ? "✅" : "❌"}`
+          : `⏳ ${left ? `${left}거래일 남음` : "오늘 장 마감 후"}<br><small>(${pctTxt(r * 100, 1)})</small>`;
+        return `<tr><td>${v[3].slice(5).replace("-", "/")}</td><td><a href="#/s/${v[0]}">${esc(v[1])}</a> <small class="muted">${v[2]}일</small></td><td>${me}</td><td>${ai}${v[6]}%</td><td class="r">${txt}</td></tr>`;
+      }).join("")}</table><p class="muted small">찍은 날 가격과 기간(1·5·20거래일)이 지난 날 종가를 비교해요. 같은 종목·기간은 하루에 한 번만 찍을 수 있어요.</p>`;
+  }
+
+  after(() => {
+    document.querySelectorAll("[data-del]").forEach((b) => b.onclick = (e) => { e.preventDefault(); toggleFav(b.dataset.del); render(); });
+    document.querySelectorAll("[data-hdel]").forEach((b) => b.onclick = () => {
+      store.set("ss-hold", holds().filter((x) => x[0] !== b.dataset.hdel)); toast("뺐어요"); render();
+    });
+    $("#hadd").onclick = () => {
+      const s = searchList($("#hq").value, 1)[0], price = +$("#hp").value, qty = +$("#hn").value;
+      if (!s) { toast("종목을 못 찾았어요"); return; }
+      if (!(price > 0) || !(qty > 0)) { toast("산 가격과 수량을 넣어 주세요"); return; }
+      const all = holds(), old = all.find((x) => x[0] === s.code);
+      let p2 = price, q2 = qty;
+      if (old) { q2 = old[3] + qty; p2 = (old[2] * old[3] + price * qty) / q2; }
+      store.set("ss-hold", [[s.code, s.name, p2, q2], ...all.filter((x) => x[0] !== s.code)].slice(0, 30));
+      toast(`✅ ${s.name}을(를) 추가했어요`); render();
+    };
+  });
+  return `<div class="toolbar">${segH()}<span class="muted small">${esc(marketState())} ${esc(liveLabel())}</span></div>
+  <div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
+  ${holdHtml}
+  <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
+  <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 서버로 보내지 않아요.</p>${foot()}`;
 }, "my");
+
+// ───────── 🔎 조건검색 ─────────
+let scState = Object.assign({ prob: 60, hit: 100, mkt: "ALL", price: "all", safe: true }, store.get("ss-sc", {}));
+let scShow = 30;
+route(/^\/screen/, async () => {
+  await Promise.all([loadIndex(), loadLive()]);
+  const k = "p" + H, hk = "hr" + H;
+  let d = INDEX.filter((s) => s[k] != null && !s.halted && s[k] >= scState.prob / 100);
+  if (scState.hit < 100) d = d.filter((s) => { const t = hitTop(s[hk]); return t != null && t <= scState.hit; });
+  if (scState.mkt !== "ALL") d = d.filter((s) => s.market === scState.mkt);
+  const PR = { all: [0, Infinity], a: [0, 1e4], b: [1e4, 5e4], c: [5e4, 2e5], d: [2e5, Infinity] }[scState.price];
+  d = d.filter((s) => { const p = priceOf(s).now; return p != null && p >= PR[0] && p < PR[1]; });
+  if (scState.safe) d = d.filter((s) => !s.managed && !s.alert);
+  d.sort((a, b) => b[k] - a[k]);
+  const seg = (name, opts) => `<div class="seg" data-sc="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(v) === String(scState[name]) ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  after(() => {
+    const save = () => { store.set("ss-sc", scState); scShow = 30; render(); };
+    document.querySelectorAll("[data-sc] button").forEach((b) => b.onclick = () => {
+      const n = b.parentElement.dataset.sc; scState[n] = n === "hit" ? +b.dataset.v : b.dataset.v; save();
+    });
+    const rg = $("#scp");
+    rg.oninput = () => { $("#scpv").textContent = rg.value + "%"; };
+    rg.onchange = () => { scState.prob = +rg.value; save(); };
+    $("#scprice").onchange = (e) => { scState.price = e.target.value; save(); };
+    $("#scsafe").onchange = (e) => { scState.safe = e.target.checked; save(); };
+    const m = $("#scmore"); if (m) m.onclick = () => { scShow += 30; render(); };
+  });
+  return `<div class="card"><h2>🔎 조건검색</h2><p class="muted small" style="margin-top:-6px">원하는 조건을 고르면 코스피·코스닥 전 종목에서 맞는 종목을 찾아 드려요.</p>
+    <div style="display:grid;gap:10px">
+    <div>${segH()}</div>
+    <label class="small">📈 상승 확률 <b id="scpv">${scState.prob}%</b> 이상<input id="scp" type="range" min="50" max="80" step="1" value="${scState.prob}" style="width:100%"></label>
+    <div class="small">🎯 적중률 순위<br>${seg("hit", [[100, "상관없음"], [50, "상위 50%"], [30, "상위 30%"], [10, "상위 10%"]])}</div>
+    <div class="small">시장<br>${seg("mkt", [["ALL", "전체"], ["KOSPI", "코스피"], ["KOSDAQ", "코스닥"]])}</div>
+    <label class="small">주가 <select id="scprice" class="num">${[["all", "전체"], ["a", "1만 원 미만"], ["b", "1~5만 원"], ["c", "5~20만 원"], ["d", "20만 원 이상"]]
+      .map(([v, l]) => `<option value="${v}" ${v === scState.price ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label class="ck"><input type="checkbox" id="scsafe" ${scState.safe ? "checked" : ""}> ⚠️ 관리종목·투자주의/경고/위험 종목 빼기</label></div></div>
+  <div class="card"><h2>조건에 맞는 종목 <small>${d.length.toLocaleString("ko-KR")}개</small></h2>
+    ${d.length ? d.slice(0, scShow).map((s, i) => stockRow(s, { rank: i + 1 })).join("") : `<div class="muted small">조건에 맞는 종목이 없어요. 상승 확률을 낮추거나 적중률 조건을 풀어 보세요.</div>`}
+    ${d.length > scShow ? `<button class="more" id="scmore">30개 더 보기</button>` : ""}
+    <p class="muted small">상승 확률이 높은 순서예요. AI 기준일 ${esc(META?.date || "-")} · 적중률 순위는 최근 60번 예측 기준. 조건에 맞는다고 오른다는 보장은 없어요.</p></div>${foot()}`;
+}, "rank");
+
+// ───────── 🌏 시장 분위기 ─────────
+route(/^\/market/, async () => {
+  await Promise.all([loadIndex(), loadLive()]);
+  let mk = [];
+  try { mk = await getJSON(DATA + "market.json", 3600000); } catch { /* 없음 */ }
+  const idx = (LIVEJ && LIVEJ.idx) || {};
+  const liveOf = { "코스피": idx.KOSPI, "코스닥": idx.KOSDAQ };
+  const cards = mk.map((x) => {
+    const l = liveOf[x.name];
+    const v = l ? l[0] : x.last, c = l ? l[1] : x.chg * 100;
+    return `<div class="stat"><small>${esc(x.name)}</small><b>${v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}${x.name.includes("환율") ? "원" : ""}</b>
+      <div class="${cls(c)}">${c > 0 ? "▲" : c < 0 ? "▼" : ""}${pctTxt(c, 2)}</div></div>`;
+  }).join("");
+  const mood = HS.map((h) => {
+    const all = INDEX.filter((s) => s["a" + h] != null && !s.halted);
+    const share = (l) => (l.length ? l.filter((s) => s["a" + h] >= 0.5).length / l.length : null);
+    const sh = share(all);
+    if (sh == null) return "";
+    const lab = sh >= 0.55 ? ["상승 우세", "up"] : sh <= 0.45 ? ["하락 우세", "down"] : ["팽팽", ""];
+    const det = [["KOSPI", "코스피"], ["KOSDAQ", "코스닥"]].map(([m, ko]) => `${ko} ${Math.round(share(all.filter((s) => s.market === m)) * 100)}%`).join(" · ");
+    return `<div class="stat"><small>${h}일 뒤 오를 것 같은 종목</small><b>${Math.round(sh * 100)}%</b><div class="small ${lab[1]}">${lab[0]}</div><div class="small muted">${det}</div></div>`;
+  }).join("");
+  const ks = mk.filter((x) => x.name === "코스피" || x.name === "코스닥");
+  after(() => {
+    if (ks.length) {
+      const labels = ks[0].d;
+      drawLines($("#mchart"), labels, ks.map((x, i) => {
+        const m = new Map(x.d.map((dd, j) => [dd, x.c[j]]));
+        const b = x.c[0];
+        return { v: labels.map((dd) => (m.has(dd) ? (m.get(dd) / b - 1) * 100 : null)), color: i ? "#3b82f6" : "#e5484d" };
+      }), { ref: 0, fmt: (v) => Math.round(v) + "%" });
+    }
+  });
+  return `<div class="card"><h2>🌏 주요 지수 <small>${esc(marketState())}</small></h2>${cards ? `<div class="split">${cards}</div>` : `<div class="muted small">지금은 지수를 불러오지 못했어요.</div>`}
+    <p class="muted small">전 거래일 대비 · 코스피·코스닥은 장중 20분마다 새로 고침 · 미국 지수·환율은 오후 5시 기준(미국 지수는 한국 시간 새벽에 마감).</p>
+    ${ks.length ? `<p class="small" style="margin:10px 0 2px"><b>최근 3개월 등락률</b></p><canvas id="mchart"></canvas>${legend([["#e5484d", "코스피"], ["#3b82f6", "코스닥"]])}` : ""}</div>
+  <div class="card"><h2>🤖 AI가 본 시장 분위기</h2><div class="split">${mood}</div>
+    <p class="muted small">${esc(META?.date || "")} 장 마감 기준 · 전 종목 중 AI 상승 확률(차트 AI)이 50% 이상인 종목의 비율이에요. 55% 이상이면 '상승 우세', 45% 이하면 '하락 우세'.</p></div>${foot()}`;
+}, "home");
+
+// ───────── 🆚 비교 ─────────
+route(/^\/cmp(?:\?(\d{6})?-(\d{6})?)?/, async (a, b) => {
+  await Promise.all([loadIndex(), loadLive()]);
+  const nameOf = (c) => (c && BYCODE.get(c) ? BYCODE.get(c).name : "");
+  after(() => {
+    $("#cmpgo").onclick = () => {
+      const x = searchList($("#ca").value, 1)[0], y = searchList($("#cb").value, 1)[0];
+      if (!x || !y) { toast("두 종목을 모두 찾을 수 있게 넣어 주세요"); return; }
+      location.hash = `#/cmp?${x.code}-${y.code}`;
+    };
+  });
+  const form = `<div class="card"><h2>🆚 두 종목 비교</h2><p class="muted small" style="margin-top:-6px">두 종목을 넣으면 AI 확률·적중률·기본 정보를 나란히 비교해요.</p>
+    <div style="display:grid;gap:6px"><input id="ca" class="num" placeholder="첫 번째 종목 (예: 삼성전자)" value="${esc(nameOf(a))}">
+    <input id="cb" class="num" placeholder="두 번째 종목 (예: SK하이닉스)" value="${esc(nameOf(b))}">
+    <button class="more" id="cmpgo">비교하기</button><div>${segH()}</div></div></div>`;
+  if (!a || !b) return form + foot();
+  let A, B;
+  try { [A, B] = await Promise.all([getJSON(`${DATA}s/${a}.json`), getJSON(`${DATA}s/${b}.json`)]); }
+  catch { return form + `<div class="empty">두 종목 중 하나의 분석 자료가 없어요.</div>` + foot(); }
+  const xs = [A, B].map((d) => {
+    const s = BYCODE.get(d.code) || { code: d.code, close: d.close, chg: d.chg };
+    const pr = priceOf(s), P = d.prob[H] || d.prob[String(H)], ST = d.stat[H] || d.stat[String(H)] || {};
+    const hr = ST.n ? ST.hits / ST.n : null, FL = (d.follow || {})[H] || (d.follow || {})[String(H)];
+    const ns = ((d.prob["1"] || {}).news || 0) / 0.06;
+    const c = d.chart.c;
+    return { d, pr, P, hr, top: hitTop(ST.n >= 60 ? hr : null), FL, ns, mood: d.news && d.news.length ? newsMood(ns) : "뉴스 없음",
+      yr: c[c.length - 1] / c[0] - 1, gap: d.cons && d.cons.target ? d.cons.target / pr.now - 1 : null, info: d.info || {} };
+  });
+  const rows = [
+    ["현재가", ...xs.map((x) => `${won(x.pr.now)}원<br><small class="${cls(x.pr.chg)}">${pctTxt(x.pr.chg)}</small>`), null, null],
+    [`${H}일 뒤 오를 확률`, ...xs.map((x) => (x.P ? `${(x.P.p * 100).toFixed(1)}%` : "-")), ...xs.map((x) => (x.P ? x.P.p : null))],
+    ["최근 적중률", ...xs.map((x) => (x.hr != null ? Math.round(x.hr * 100) + "%" : "-")), ...xs.map((x) => x.hr)],
+    ["적중률 순위", ...xs.map((x) => (x.top ? `상위 ${x.top}%` : "-")), ...xs.map((x) => (x.top ? -x.top : null))],
+    ["뉴스 분위기", ...xs.map((x) => x.mood), ...xs.map((x) => x.ns)],
+    ["AI 따라 했다면(1년)", ...xs.map((x) => (x.FL ? pctTxt(x.FL.s * 100, 1) : "-")), ...xs.map((x) => (x.FL ? x.FL.s : null))],
+    ["1년 주가 수익률", ...xs.map((x) => pctTxt(x.yr * 100, 1)), ...xs.map((x) => x.yr)],
+    ["목표주가까지", ...xs.map((x) => (x.gap != null ? pctTxt(x.gap * 100, 1) : "-")), ...xs.map((x) => x.gap)],
+    ...["시가총액", "PER", "PBR", "배당수익률"].map((k) => [k, ...xs.map((x) => esc(x.info[k] || "-")), null, null]),
+  ];
+  after(() => {
+    const L = xs.map((x) => x.d.chart);
+    const labels = L[0].d.length >= L[1].d.length ? L[0].d : L[1].d;
+    drawLines($("#cchart"), labels, L.map((ch, i) => {
+      const m = new Map(ch.d.map((dd, j) => [dd, ch.c[j]]));
+      const base = ch.c[0];
+      return { v: labels.map((dd) => (m.has(dd) ? (m.get(dd) / base - 1) * 100 : null)), color: i ? "#3b82f6" : "#e5484d" };
+    }), { ref: 0, fmt: (v) => Math.round(v) + "%" });
+  });
+  return form + `<div class="card"><table class="cmp"><tr><th></th>${xs.map((x) => `<th><a href="#/s/${x.d.code}">${esc(x.d.name)} ›</a></th>`).join("")}</tr>
+    ${rows.map(([lab, va, vb, na, nb]) => {
+      let wa = "", wb = "";
+      if (na != null && nb != null && na !== nb) [wa, wb] = na > nb ? ["win", "lose"] : ["lose", "win"];
+      return `<tr><td>${lab}</td><td class="${wa}">${va}</td><td class="${wb}">${vb}</td></tr>`;
+    }).join("")}</table>
+    <p class="muted small">빨간 굵은 글씨 = 둘 중 더 나은 쪽, 파란 글씨 = 아닌 쪽. 확률은 뉴스·테마까지 반영한 값이고, 과거 성적이 앞으로를 보장하지 않아요.</p>
+    <p class="small" style="margin:10px 0 2px"><b>최근 1년 주가 등락률</b></p><canvas id="cchart"></canvas>
+    ${legend([["#e5484d", esc(A.name)], ["#3b82f6", esc(B.name)]])}</div>${foot()}`;
+}, "home");
 
 // ───────── ☰ 더보기 ─────────
 let installEvt = null;
@@ -595,10 +1063,11 @@ route(/^\/more/, async () => {
     document.querySelectorAll("[data-th]").forEach((b) => b.onclick = () => { store.set("ss-theme", b.dataset.th); applyTheme(); render(); });
     const ib = $("#install");
     if (ib) ib.onclick = async () => { if (installEvt) { installEvt.prompt(); installEvt = null; } };
-    $("#refresh").onclick = () => { memo.clear(); INDEX = null; toast("새로 불러왔어요"); location.hash = "#/"; render(); };
+    $("#refresh").onclick = () => { memo.clear(); INDEX = null; for (const o of [hitPool, orderMemo]) for (const k in o) delete o[k]; toast("새로 불러왔어요"); location.hash = "#/"; render(); };
   });
   const link = (u, t) => `<a class="row" href="${u}"><div class="nm"><b>${t}</b></div><span class="muted">›</span></a>`;
-  return `<div class="card"><h2>⚙️ 설정</h2>
+  return `<div class="card"><h2>📂 전체 메뉴</h2>${catBar()}<p class="muted small">예전 앱의 8가지 화면을 모두 여기서 열 수 있어요. 아래 탭: 🏠 홈(분석) · 🏆 순위(확률·적중·조건검색) · 🧩 테마 · ⭐ 내 종목(관심·산 종목·AI vs 나).</p></div>
+  <div class="card"><h2>⚙️ 설정</h2>
     <div class="row"><div class="nm"><b>화면 색</b></div><div class="seg">${[["auto", "자동"], ["light", "밝게"], ["dark", "어둡게"]]
       .map(([v, l]) => `<button data-th="${v}" class="${v === th ? "on" : ""}">${l}</button>`).join("")}</div></div>
     <div class="row"><div class="nm"><b>기본 예측 기간</b></div>${segH()}</div>
