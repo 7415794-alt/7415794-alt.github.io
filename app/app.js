@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.2.2
+/* 스톡시그널 앱 v2.3.0
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.2.2";
+const VERSION = "2.3.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -42,6 +42,10 @@ function getJSON(url, ttl = 600000) {
   p.catch(() => memo.delete(url));
   return p;
 }
+// 초성 검색 (ㅅㅅㅈㅈ → 삼성전자)과 자주 부르는 별명
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const chosung = (t) => [...t].map((c) => { const k = c.charCodeAt(0) - 0xac00; return k >= 0 && k < 11172 ? CHO[Math.floor(k / 588)] : ""; }).join("");
+const ALIAS = { "000660": "하이닉스", "005380": "현대자동차현대차", "035420": "네이버", "005490": "포스코", "035720": "카카오", "373220": "엘지엔솔엘지에너지솔루션", "066570": "엘지전자" };
 let INDEX = null, BYCODE = new Map(), META = null, LIVEJ = null;
 async function loadIndex() {
   if (INDEX) return INDEX;
@@ -49,7 +53,10 @@ async function loadIndex() {
   META = meta;
   const c = ix.cols;
   INDEX = ix.rows.map((r) => Object.fromEntries(c.map((k, i) => [k, r[i]])));
-  INDEX.forEach((s) => { s.key = (s.name + s.code).toLowerCase().replace(/\s/g, ""); BYCODE.set(s.code, s); });
+  INDEX.forEach((s) => {
+    s.key = (s.name + s.code + (ALIAS[s.code] || "")).toLowerCase().replace(/\s/g, "") + "|" + chosung(s.name);
+    BYCODE.set(s.code, s);
+  });
   return INDEX;
 }
 async function loadLive(force) {
@@ -148,7 +155,8 @@ function searchList(text, n = 8) {
   for (const s of INDEX) {
     const i = s.key.indexOf(k);
     if (i < 0) continue;
-    const score = (s.name.toLowerCase().replace(/\s/g, "") === k || s.code === k ? 0 : i === 0 ? 1 : 2) + (s.p5 == null ? 0.5 : 0);
+    const al = ALIAS[s.code] && ALIAS[s.code].toLowerCase().includes(k);
+    const score = (s.name.toLowerCase().replace(/\s/g, "") === k || s.code === k ? 0 : al ? 0.6 : i === 0 ? 1 : 2) + (s.p5 == null ? 0.5 : 0);
     out.push([score, s.name.length, s]);
   }
   out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -494,8 +502,13 @@ route(/^\/s\/(\d{6})/, async (code) => {
     <p class="muted small">하루 평균 순매수량 ÷ 평소 하루 거래량. +면 사는 쪽, −면 파는 쪽이 많았어요. AI도 이 값을 함께 봐요.</p></div>` : "";
 
   // 테마
-  const thHtml = d.themes && d.themes.length ? `<div class="card"><h2>🧩 속한 테마</h2><div class="chips">${d.themes.map(([no, name, roles]) =>
-    `<a class="chip" href="#/t/${no}">${[...(roles || "")].map((r) => ROLE[r][0]).join("")}${esc(name)}</a>`).join("")}</div>
+  const TH = d.themes && d.themes.length ? await getJSON(DATA + "themes.json", 3600000).catch(() => null) : null;
+  const thOf = (no) => (TH ? TH.find((x) => String(x.no) === String(no)) : null);
+  const thHtml = d.themes && d.themes.length ? `<div class="card"><h2>🧩 속한 테마</h2><div class="chips">${[...d.themes]
+    .sort((a, b) => ((thOf(b[0]) || {}).chg ?? -999) - ((thOf(a[0]) || {}).chg ?? -999)).map(([no, name, roles]) => {
+      const t = thOf(no);
+      return `<a class="chip" href="#/t/${no}">${[...(roles || "")].map((r) => ROLE[r][0]).join("")}${esc(name)}${t ? ` <span class="${cls(t.chg)}">${pctTxt(t.chg, 1)}</span> <small class="muted">${t.stocks.length}종목</small>` : ""}</a>`;
+    }).join("")}</div>
     ${d.themes.some((t) => t[2]) ? `<p class="muted small">👑 시총 대장주 · 🚀 상승 대장주 · 💰 수급 대장주</p>` : ""}</div>` : "";
 
   // 뉴스
