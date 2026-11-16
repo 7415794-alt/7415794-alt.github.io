@@ -9,16 +9,16 @@
 <title>실험 ⑤ 밤사이 미국 시장 움직임은 도움이 될까? | 스톡시그널</title>
 <meta name="description" content="나스닥·반도체 지수·공포지수 등 미국 시장 정보를 넣었을 때의 효과와 함정">
 <link rel="canonical" href="https://stocksignals.kr/research-us.html">
-<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top"><div class="in">
-<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
 <nav><a href="index.html">홈</a><a href="guide.html">투자 지표 가이드</a><a href="research.html" class=on>AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
 </div></header>
 <main>
-<article><h1>실험 ⑤ 밤사이 미국 시장 움직임은 도움이 될까?</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>세계적인 사건이 터지면 그 영향은 먼저 밤사이 미국 시장에 나타납니다. 이 정보를 AI에 넣으면 한국 주가를 더 잘 맞힐 수 있을까요?</p>
+<article><h1>실험 ⑤ 밤사이 미국 시장 움직임은 도움이 될까?</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>세계적인 사건이 터지면 그 영향은 먼저 밤사이 미국 시장에 나타납니다. 이 정보를 AI에 넣으면 한국 주가를 더 잘 맞힐 수 있을까요?</p>
 <h2>넣은 정보</h2>
 <p>나스닥, 필라델피아 반도체 지수, S&amp;P500, 변동성 지수(VIX), 미국에 상장된 한국 ETF(EWY)의 1일·5일 수익률.</p>
 <h2>결과</h2>
@@ -30,6 +30,18 @@
 <h2>함정</h2>
 <p>이 개선은 대부분 "오늘 시가가 어제 종가보다 높게 시작할지"를 맞힌 것이었습니다. 아침에 이 정보를 보고 사면 이미 시가에 반영된 가격으로 사게 됩니다.
 시가에 샀다고 보고 다시 계산하니 적중률은 54.2%→53.9%로 차이가 없었습니다. 숫자는 좋아 보이지만 실제 투자 판단에는 도움이 되지 않아 앱에 넣지 않았습니다.</p>
+
+<h2>모든 기간 결과</h2>
+<div class=wrap><table><tr><th>적중률 (AUC)</th><th>1일 뒤</th><th>5일 뒤</th><th>20일 뒤</th></tr>
+<tr><td>지금 방식</td><td>55.5% (0.546)</td><td>55.0% (0.552)</td><td>56.6% (0.576)</td></tr>
+<tr><td>+ 오후 5시에 아는 미국 장</td><td>54.3% (0.540)</td><td>54.0% (0.541)</td><td>56.2% (0.574)</td></tr>
+<tr><td>+ 어젯밤 미국 장</td><td>57.4% (0.597)</td><td>54.9% (0.557)</td><td>56.2% (0.577)</td></tr></table></div>
+<h2>시가에 샀다고 보고 다시 채점</h2>
+<div class=wrap><table><tr><th>1일 뒤, 오늘 시가 → 오늘 종가</th><th>적중률</th><th>AUC</th></tr>
+<tr><td>지금 방식</td><td>54.2%</td><td>0.510</td></tr>
+<tr><td>+ 어젯밤 미국 장</td><td>53.9%</td><td>0.530</td></tr></table></div>
+<p>어젯밤 미국 장 정보는 "어제 종가 → 오늘 종가"로 재면 크게 좋아 보였지만, 실제로 아침에 살 수 있는 가격(시가)부터 재면 효과가 거의 사라졌습니다.
+이 실험은 뒤에 한 <a href="research-index.html">실험 ⑥ 코스피·코스닥 아침 확률</a>에서도 똑같이 확인됐습니다.</p>
 <div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
 </main>
 <footer>

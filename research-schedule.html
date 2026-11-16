@@ -9,16 +9,16 @@
 <title>실험 ③ 실적 발표·배당락 같은 일정을 반영하면? | 스톡시그널</title>
 <meta name="description" content="실적 발표, 배당락, 테마 행사 일정을 앞둔 종목의 실제 움직임과 확률 반영 효과">
 <link rel="canonical" href="https://stocksignals.kr/research-schedule.html">
-<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top"><div class="in">
-<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
 <nav><a href="index.html">홈</a><a href="guide.html">투자 지표 가이드</a><a href="research.html" class=on>AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
 </div></header>
 <main>
-<article><h1>실험 ③ 실적 발표·배당락 같은 일정을 반영하면?</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>앞으로 실적 발표나 배당락이 예정된 종목은 다르게 움직일까요? 네이버 공시 약 26만 건과 테마 일정 기사 약 1만 2천 건으로 확인했습니다.</p>
+<article><h1>실험 ③ 실적 발표·배당락 같은 일정을 반영하면?</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>앞으로 실적 발표나 배당락이 예정된 종목은 다르게 움직일까요? 네이버 공시 약 26만 건과 테마 일정 기사 약 1만 2천 건으로 확인했습니다.</p>
 <h2>일정 앞에서 실제로 오른 비율</h2>
 <div class=wrap><table><tr><th>20거래일 안에 있는 일정</th><th>오른 비율</th><th>평소</th></tr>
 <tr><td>실적 발표(잠정실적 공시)</td><td class=up>52.5%</td><td>43.0%</td></tr>
@@ -31,6 +31,24 @@
 일정 정보가 도움이 된 게 아니라, 확률을 전체적으로 낮춘 효과(하락이 더 많았던 시기)였던 것입니다. AUC도 오르지 않았습니다.</p>
 <h2>배운 점</h2>
 <p>적중률 숫자가 올랐다고 바로 믿으면 안 됩니다. "아무 의미 없는 단순한 조정으로도 같은 효과가 나는지"를 꼭 비교해야 합니다. 이 실험 뒤 앱은 바꾸지 않았습니다.</p>
+
+<h2>기간별 자세한 결과</h2>
+<p>일정이 예측 기간 안에 들어 있는 종목이 실제로 오른 비율입니다(일정 없는 평소와 비교).</p>
+<div class=wrap><table><tr><th>일정</th><th>1일 뒤</th><th>5일 뒤</th><th>20일 뒤</th></tr>
+<tr><td>실적 발표 앞</td><td class=up>49.5% <small>(평소 44.1%)</small></td><td class=up>50.6% <small>(43.7%)</small></td><td class=up>52.5% <small>(43.0%)</small></td></tr>
+<tr><td>배당락·권리락 앞</td><td class=up>52.8% <small>(44.1%)</small></td><td class=up>47.6% <small>(43.8%)</small></td><td class=up>49.9% <small>(43.5%)</small></td></tr>
+<tr><td>테마 행사 기사 뒤</td><td>43.9% <small>(44.4%)</small></td><td class=down>42.6% <small>(45.2%)</small></td><td class=down>41.9% <small>(45.5%)</small></td></tr></table></div>
+<p class=meta>사례 수: 실적 발표 2,280~35,270건, 배당락 500~9,382건, 테마 일정 약 30만~33만 건 (기간별로 다름)</p>
+<h2>일정이 있는 종목만 따로 보면</h2>
+<div class=wrap><table><tr><th>적중률 (AUC)</th><th>그대로</th><th>작게 ±2%p</th><th>크게 ±6%p</th><th>아주 크게 ±12%p</th></tr>
+<tr><td>실적·배당 일정, 1일 뒤</td><td>51.8% (0.517)</td><td>52.5% (0.520)</td><td>51.7% (0.521)</td><td class=down>50.7% (0.518)</td></tr>
+<tr><td>실적·배당 일정, 20일 뒤</td><td>54.8% (0.575)</td><td>54.3% (0.576)</td><td>53.9% (0.575)</td><td class=down>53.1% (0.573)</td></tr>
+<tr><td>테마 일정, 20일 뒤</td><td>53.5% (0.546)</td><td>54.4% (0.544)</td><td>55.4% (0.539)</td><td>56.1% (0.532)</td></tr></table></div>
+<p>테마 일정은 크게 반영할수록 적중률이 오르는데 AUC는 계속 떨어졌습니다. 이것이 바로 "확률을 전체적으로 낮춘 효과"의 흔적입니다.
+진짜 실력이 늘었다면 적중률과 AUC가 함께 올라야 합니다.</p>
+<h2>모은 자료</h2>
+<ul><li>네이버 증권 공시 약 26만 건에서 잠정실적·배당 관련 공시를 골라 날짜를 뽑았습니다.</li>
+<li>테마 행사·출시 예정 기사 1만 1,791건을 모아, 기사가 나온 날부터 행사일까지를 "일정 앞" 기간으로 표시했습니다.</li></ul>
 <div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
 </main>
 <footer>

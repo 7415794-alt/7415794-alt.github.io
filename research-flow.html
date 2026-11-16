@@ -9,16 +9,16 @@
 <title>실험 ④ 수급과 확률 보정 | 스톡시그널</title>
 <meta name="description" content="외국인·기관·개인 수급 추가, 과거 성적에 맞춘 확률 보정의 효과">
 <link rel="canonical" href="https://stocksignals.kr/research-flow.html">
-<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top"><div class="in">
-<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
 <nav><a href="index.html">홈</a><a href="guide.html">투자 지표 가이드</a><a href="research.html" class=on>AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
 </div></header>
 <main>
-<article><h1>실험 ④ 수급과 확률 보정</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>주가 지표 말고 실제로 적중률을 올릴 재료가 있을까요? 수급과 확률 보정 두 가지를 509개 종목으로 실험했습니다.</p>
+<article><h1>실험 ④ 수급과 확률 보정</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>주가 지표 말고 실제로 적중률을 올릴 재료가 있을까요? 수급과 확률 보정 두 가지를 509개 종목으로 실험했습니다.</p>
 <h2>결과 (최근 1년, 날짜별로 그 전 정보만 사용)</h2>
 <div class=wrap><table><tr><th>적중률</th><th>1일 뒤</th><th>5일 뒤</th><th>20일 뒤</th></tr>
 <tr><td>주가 지표만</td><td>54.8%</td><td>54.8%</td><td>56.2%</td></tr>
@@ -28,6 +28,22 @@
 <h2>해석</h2>
 <ul><li><b>수급</b>은 세 기간 모두에서 조금씩 도움이 됐고, 오를 종목을 가려내는 힘(AUC)도 함께 좋아졌습니다. → 앱에 적용</li>
 <li><b>확률 보정</b>(과거 성적에 맞춰 확률을 조정)은 1일 뒤만 좋아졌고 20일 뒤는 크게 나빠졌습니다. 1일 뒤 개선도 "하락이라고 더 자주 말한" 효과가 커서 적용하지 않았습니다.</li></ul>
+
+<h2>더 자세한 결과</h2>
+<div class=wrap><table><tr><th>1일 뒤</th><th>적중률</th><th>움직인 날만</th><th>AUC</th><th>확신 상위 10%</th><th>'오른다'고 말한 비율</th></tr>
+<tr><td>지표만</td><td>54.8%</td><td>52.5%</td><td>0.542</td><td>53.2%</td><td>27.5%</td></tr>
+<tr><td>+ 전날 수급 (앱 적용)</td><td>55.1%</td><td>52.7%</td><td>0.543</td><td>55.3%</td><td>24.7%</td></tr>
+<tr><td>+ 당일 수급</td><td>55.5%</td><td>53.0%</td><td>0.548</td><td>56.9%</td><td>25.7%</td></tr>
+<tr><td>+ 당일 수급 + 보정</td><td>57.5%</td><td>54.9%</td><td class=down>0.543</td><td>55.9%</td><td class=down>15.2%</td></tr></table></div>
+<p>보정을 하면 적중률은 57.5%로 올랐지만, "오른다"고 말하는 비율이 25.7%에서 15.2%로 크게 줄었습니다.
+하락이 더 많은 시기에 "하락"이라고 더 자주 말해서 숫자가 좋아진 것이고, 오를 종목을 가려내는 힘(AUC)은 오히려 떨어졌습니다.
+20일 뒤 예측에서는 보정 후 적중률이 56.7%에서 52.9%로 크게 나빠졌습니다.</p>
+<h2>"움직인 날만" 따로 본 이유</h2>
+<p>거래가 적은 종목은 가격이 그대로인 날이 많아, "안 오른다"는 예측이 공짜로 맞습니다. 그래서 가격이 실제로 움직인 날만 따로 떼어 다시 채점했습니다.
+모든 방식에서 이 숫자가 2~3%p 낮았고, 진짜 실력은 이쪽에 더 가깝습니다.</p>
+<h2>수급 자료는 어떻게 모았나</h2>
+<p>네이버 증권에서 509개 종목의 날짜별 외국인·기관·개인 순매수와 외국인 보유율을 모았습니다. 순매수량은 종목 크기가 달라 그대로 비교할 수 없으므로 최근 20일 평균 거래량으로 나눴고,
+연속 순매수 일수, 외국인 보유율 5·20일 변화, 외국인·기관 동시 매수 여부를 더해 모두 11가지 수급 지표를 만들었습니다.</p>
 <div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
 </main>
 <footer>

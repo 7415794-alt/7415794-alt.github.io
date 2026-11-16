@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google-adsense-account" content="ca-pub-4318202692681153">
+<meta name="google-site-verification" content="-lVkeSjMURWz4EZa4Ep1Jic5dTx75F-Rfeze_wJoXKs">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4318202692681153" crossorigin="anonymous"></script>
+<title>실험 ⑥ 코스피·코스닥이 오늘 오를 확률을 맞힐 수 있을까? | 스톡시그널</title>
+<meta name="description" content="지수 자체의 상승 확률을 AI로 예측했을 때의 결과와, 미래 정보·시가 착시를 걸러 낸 과정">
+<link rel="canonical" href="https://stocksignals.kr/research-index.html">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="in">
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
+<nav><a href="index.html">홈</a><a href="guide.html">투자 지표 가이드</a><a href="research.html" class=on>AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
+</div></header>
+<main>
+<article><h1>실험 ⑥ 코스피·코스닥이 오늘 오를 확률을 맞힐 수 있을까?</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>"코스피가 내일 오를지 알려 줄 수 없나요?"라는 요청에서 시작한 실험입니다. 결과가 너무 좋게 나와서 오히려 의심부터 했고, 실제로 함정이 두 개 있었습니다.</p>
+<h2>실험 방법</h2>
+<ul><li>대상: 코스피·코스닥 지수 10년치 하루 데이터 (약 2,400거래일)</li>
+<li>방법: 종목 AI와 같은 기술 지표로, 과거로 학습 → 다음 구간을 맞히는 워크포워드 검증 5구간</li>
+<li>비교 기준: "항상 많은 쪽(오른다)으로 찍기"</li></ul>
+<h2>첫 결과: 너무 좋았다</h2>
+<p>처음 계산에서는 코스피 1일 뒤 적중률 60.8%, AUC 0.64가 나왔습니다. 개별 종목 AI(54% 안팎)보다 훨씬 좋은 숫자라 바로 의심했습니다.</p>
+<h2>함정 ① 미래 정보</h2>
+<p>원인을 찾아보니 지표 안에 "같은 날짜의 미국 S&amp;P 500 종가"가 들어 있었습니다. 미국 장은 한국 장이 끝난 뒤 밤에 열리므로, 한국 저녁에 예측할 때는 알 수 없는 정보입니다.
+미국 정보를 빼거나 하루 늦춰서(그때 실제로 아는 값만) 다시 계산하자 결과가 완전히 달라졌습니다.</p>
+<div class=wrap><table><tr><th>저녁에 아는 정보만</th><th>적중률</th><th>항상 오른다</th><th>AUC</th></tr>
+<tr><td>코스피 1일 뒤</td><td class=down>53.8%</td><td>54.8%</td><td>0.496</td></tr>
+<tr><td>코스피 5일 뒤</td><td class=down>54.3%</td><td>56.0%</td><td>0.513</td></tr>
+<tr><td>코스닥 1일 뒤</td><td>54.2%</td><td>54.3%</td><td>0.517</td></tr>
+<tr><td>코스닥 5일 뒤</td><td class=down>53.5%</td><td>55.1%</td><td>0.511</td></tr></table></div>
+<p>저녁에 아는 정보만으로는 지수 방향을 "항상 오른다"보다도 못 맞혔습니다. AUC 0.5는 동전 던지기 수준입니다.</p>
+<h2>그렇다면 아침에 계산하면?</h2>
+<p>미국 장이 끝난 한국 아침 6~7시라면 어젯밤 미국 종가를 정당하게 쓸 수 있습니다. 이렇게 하면 "어제 종가보다 오늘 종가가 높을지"를 꽤 잘 맞혔습니다.</p>
+<div class=wrap><table><tr><th>아침 계산 (어젯밤 미국 장 반영)</th><th>적중률</th><th>항상 오른다</th><th>AUC</th></tr>
+<tr><td>코스피: 어제 종가 → 오늘 종가</td><td class=up>60.8%</td><td>54.8%</td><td>0.637</td></tr>
+<tr><td>코스닥: 어제 종가 → 오늘 종가</td><td class=up>58.4%</td><td>54.3%</td><td>0.574</td></tr></table></div>
+<h2>함정 ② 이미 시가에 반영된 정보</h2>
+<p>그런데 같은 정보로 "오늘 시가가 어제 종가보다 높을지"와 "오늘 시가부터 종가까지 오를지"를 따로 재 보았습니다.</p>
+<div class=wrap><table><tr><th>아침 계산</th><th>코스피 적중률 (AUC)</th><th>코스닥 적중률 (AUC)</th></tr>
+<tr><td>시가가 어제보다 높게 시작</td><td class=up>69.6% (0.763)</td><td class=up>70.3% (0.766)</td></tr>
+<tr><td>오늘 시가 → 오늘 종가</td><td class=down>49.3% (0.500)</td><td>50.9% (0.519)</td></tr></table></div>
+<p>맞히는 힘은 거의 전부 <b>"아침에 높게 시작할지 낮게 시작할지"</b>에서 나왔습니다. 장이 열린 뒤 시가부터 종가까지의 방향은 동전 던지기와 같았습니다.
+즉 이 확률을 보고 장 시작 후에 사거나 팔아도 이익을 얻기는 어렵습니다. <a href="research-us.html">실험 ⑤</a>에서 개별 종목으로 확인한 것과 같은 결론입니다.</p>
+<h2>앱에는 어떻게 넣었나</h2>
+<p>"코스피가 어제보다 높게 끝날지"는 그 자체로 시장 분위기를 아는 데 도움이 되는 정보라, 앱 홈에 평일 아침 7시쯤 계산한 확률을 보여 주기로 했습니다.
+대신 화면에 <b>이 확률의 근거가 대부분 아침 출발 가격이라는 점</b>을 함께 적었고, 매일 장이 끝나면 맞았는지 자동으로 채점해 실제 기록을 쌓습니다.</p>
+<h2>배운 점</h2>
+<ul><li>결과가 예상보다 훨씬 좋으면 먼저 미래 정보가 섞이지 않았는지 의심해야 합니다.</li>
+<li>"맞힌다"와 "쓸모 있다"는 다릅니다. 실제로 사고팔 수 있는 가격으로 다시 재 봐야 합니다.</li></ul>
+<div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
+</main>
+<footer>
+<a href="about.html">소개·문의</a>·<a href="privacy.html">개인정보 처리방침</a>·<a href="disclaimer.html">투자 유의사항·이용약관</a><br>
+© 2026 스톡시그널 · 이 사이트의 글은 투자 권유가 아니며 공부와 참고를 위한 자료입니다.
+</footer>
+</body>
+</html>

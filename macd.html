@@ -9,16 +9,16 @@
 <title>MACD 지표 읽는 법: 추세의 방향과 힘 | 스톡시그널</title>
 <meta name="description" content="MACD 선, 시그널 선, 히스토그램의 의미와 활용법">
 <link rel="canonical" href="https://stocksignals.kr/macd.html">
-<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top"><div class="in">
-<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
 <nav><a href="index.html">홈</a><a href="guide.html" class=on>투자 지표 가이드</a><a href="research.html">AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
 </div></header>
 <main>
-<article><h1>MACD 지표 읽는 법: 추세의 방향과 힘</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>MACD는 짧은 이동평균과 긴 이동평균의 차이로 추세의 방향과 힘을 보는 지표입니다. 이름은 길지만 원리는 단순합니다.</p>
+<article><h1>MACD 지표 읽는 법: 추세의 방향과 힘</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>MACD는 짧은 이동평균과 긴 이동평균의 차이로 추세의 방향과 힘을 보는 지표입니다. 이름은 길지만 원리는 단순합니다.</p>
 <h2>1. 구성</h2>
 <ul>
 <li><b>MACD 선</b>: 12일 지수이동평균 − 26일 지수이동평균. 0보다 크면 단기 흐름이 장기 흐름보다 강합니다.</li>
@@ -32,6 +32,29 @@
 <h2>4. 가격으로 나누는 이유</h2>
 <p>MACD 값은 주가 크기에 비례합니다. 100만 원짜리 주식과 1,000원짜리 주식의 MACD를 그대로 비교할 수 없습니다.
 스톡시그널은 히스토그램을 주가로 나눈 "비율"로 바꿔서 전 종목을 같은 잣대로 학습합니다.</p>
+
+<h2>5. 실제 데이터로 확인: MACD 매수 신호는 통할까?</h2>
+<p>히스토그램이 0을 위로 넘는 날(흔히 말하는 매수 신호)과 아래로 넘는 날(매도 신호) 뒤의 움직임을 한국 종목 10년치로 확인했습니다.</p>
+<div class=wrap><table><tr><th>신호가 나온 날</th><th>횟수</th><th>1일 뒤 오른 비율</th><th>5일 뒤</th><th>20일 뒤</th><th>20일 평균 수익률</th></tr><tr><td><b>전체 평균</b></td><td>771,099</td><td class=>44.2%</td><td class=>45.8%</td><td class=>45.5%</td><td>+0.88%</td></tr><tr><td>히스토그램 0 위로 전환</td><td>29,436</td><td class=>43.8%</td><td class=>44.9%</td><td class=>46.4%</td><td>+1.19%</td></tr><tr><td>히스토그램 0 아래로 전환</td><td>29,508</td><td class=>45.7%</td><td class=>46.4%</td><td class=>45.0%</td><td>+0.42%</td></tr><tr><td>MACD 0보다 큼</td><td>343,826</td><td class=>43.5%</td><td class=>44.5%</td><td class=down>43.3%</td><td>+0.55%</td></tr><tr><td>MACD 0보다 작음</td><td>427,273</td><td class=>44.8%</td><td class=>46.8%</td><td class=>47.3%</td><td>+1.15%</td></tr></table></div><p class=meta>코스피·코스닥 무작위 367개 종목, 2017-03-14~2026-10-19 하루 데이터 771,099개. '오른 비율'은 보합을 뺀 상승만 셉니다. 빨강·파랑은 전체 평균보다 2%p 넘게 높거나 낮은 칸. 현재 상장된 종목만 표본이라 크게 떨어진 뒤 상장폐지된 종목이 빠져, 급락 뒤 반등이 실제보다 좋게 보일 수 있습니다. 자세한 방법은 <a href="research-signals.html">실험 ⑦</a>.</p>
+<ul>
+<li><b>매수 신호 뒤</b> 20일 동안 오른 비율은 46.4%로 전체 평균(45.5%)과 거의 같았습니다. 평균 수익률은 +1.19%로 조금 나았습니다.</li>
+<li><b>매도 신호 뒤</b>에도 크게 나쁘지 않았습니다(45.0%). 단독 신호로는 방향을 가르는 힘이 약하다는 뜻입니다.</li>
+<li><b>MACD가 0보다 작은 상태</b>, 즉 단기 흐름이 장기 흐름보다 약한 종목이 20일 뒤에는 오히려 더 많이 올랐습니다(47.3% vs 43.3%). 이동평균 글에서 본 "평균 회귀"와 같은 현상입니다.</li>
+</ul>
+<p>MACD는 추세가 뚜렷한 종목을 고를 때 쓰기 좋지만, 한국 시장 전체에서 기계적으로 쓰면 효과가 작았습니다. 스톡시그널 AI는 MACD를 그대로 쓰지 않고 다른 지표와의 조합 속에서 의미를 찾습니다.</p>
+
+<h2>6. 실전에서 조심할 점</h2>
+<ul>
+<li><b>횡보장 헛신호</b>: 가격이 옆으로 움직이면 매수·매도 신호가 며칠 간격으로 번갈아 나옵니다. 신호가 잦으면 그 종목에서는 MACD가 잘 안 맞는 시기라고 보는 편이 낫습니다.</li>
+<li><b>다이버전스</b>: 주가는 새 고점인데 MACD 고점은 낮아지면 상승 힘이 약해지는 신호로 봅니다. RSI 다이버전스와 같은 원리입니다.</li>
+<li><b>기간 설정</b>: 12·26·9는 수십 년 전에 정해져 지금까지 표준처럼 쓰이는 값입니다. 모든 종목에 꼭 맞는 값은 아니어서, 더 짧거나 긴 기간을 쓰는 사람도 많습니다.</li>
+</ul>
+
+<h2>7. 자주 묻는 질문</h2>
+<h3>Q. MACD 선과 히스토그램 중 무엇을 봐야 하나요?</h3>
+<p>MACD 선은 추세의 방향, 히스토그램은 그 추세가 빨라지는지 느려지는지를 봅니다. 히스토그램이 줄어들기 시작하면 추세가 꺾이기 전 미리 알아챌 수 있습니다.</p>
+<h3>Q. 주봉·월봉에서도 쓰나요?</h3>
+<p>네. 같은 계산을 주 단위 가격에 적용하면 더 긴 흐름을 볼 수 있습니다. 스톡시그널은 하루 단위 데이터로 계산합니다.</p>
 <div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
 </main>
 <footer>

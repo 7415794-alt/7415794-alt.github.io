@@ -9,16 +9,16 @@
 <title>실험 ① 종목별 AI vs 전 종목 통합 AI | 스톡시그널</title>
 <meta name="description" content="종목마다 따로 학습한 AI와 전 종목을 함께 학습한 AI의 예측력 비교">
 <link rel="canonical" href="https://stocksignals.kr/research-pool.html">
-<link rel="icon" type="image/png" href="stock-ai-icon/icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top"><div class="in">
-<a class="brand" href="index.html"><img src="stock-ai-icon/icon-192.png" alt="">스톡시그널</a>
+<a class="brand" href="index.html"><img src="icon-192.png" alt="">스톡시그널</a>
 <nav><a href="index.html">홈</a><a href="guide.html">투자 지표 가이드</a><a href="research.html" class=on>AI 실험 기록</a><a href="faq.html">자주 묻는 질문</a><a href="about.html">소개·문의</a></nav>
 </div></header>
 <main>
-<article><h1>실험 ① 종목별 AI vs 전 종목 통합 AI</h1><p class=meta>마지막 수정 2026-11-12 · 스톡시그널</p><p>AI를 종목마다 따로 만들지, 하나로 만들지는 처음 부딪힌 큰 선택이었습니다. 같은 종목·같은 날짜로 공정하게 비교했습니다.</p>
+<article><h1>실험 ① 종목별 AI vs 전 종목 통합 AI</h1><p class=meta>마지막 수정 2026-11-16 · 스톡시그널</p><p>AI를 종목마다 따로 만들지, 하나로 만들지는 처음 부딪힌 큰 선택이었습니다. 같은 종목·같은 날짜로 공정하게 비교했습니다.</p>
 <h2>실험 방법</h2>
 <ul><li>대상: 코스피·코스닥 509개 종목, 10년치 하루 데이터</li>
 <li>평가: 같은 평가 종목, 같은 날짜를 시간 순서대로 나눠 과거로 학습하고 다음 구간을 맞힘</li>
@@ -30,6 +30,25 @@
 <h2>해석</h2>
 <p>세 기간 모두 통합 AI가 나았고, 특히 20일 뒤 예측에서 차이가 컸습니다. 종목 하나의 데이터로는 긴 기간의 패턴을 배우기에 표본이 부족했기 때문으로 보입니다.
 날짜별로 전 종목 중 순위를 매긴 지표를 추가로 넣어 보기도 했지만 효과가 없어 넣지 않았습니다.</p>
+
+<h2>왜 이 실험이 중요했나</h2>
+<p>종목마다 따로 학습하면 "삼성전자만의 습관"을 배울 수 있다는 장점이 있습니다. 반대로 한 종목의 데이터는 10년이라도 약 2,400일뿐이라,
+우연히 몇 번 맞아떨어진 패턴을 규칙으로 착각하기 쉽습니다(과적합). 전 종목을 함께 배우면 데이터가 수백 배로 늘어나는 대신 종목별 특징은 흐려집니다.
+어느 쪽이 나은지는 직접 재 보는 수밖에 없었습니다.</p>
+<h2>공정하게 비교하기 위해 지킨 것</h2>
+<ul>
+<li>두 방식 모두 <b>같은 종목·같은 날짜</b>로 평가했습니다. 평가 대상이 다르면 운 좋은 종목이 섞여 비교가 틀어집니다.</li>
+<li>학습 구간과 평가 구간 사이에 예측 기간만큼 빈칸을 두었습니다. 20일 뒤를 맞히는 문제라면 평가 시작 20일 전까지만 학습합니다.</li>
+<li>적중률 대신 AUC를 주 지표로 썼습니다. 적중률은 "모두 하락이라고 찍기" 같은 단순한 방법에 쉽게 속기 때문입니다(<a href="hit-rate.html">적중률 읽는 법</a>).</li>
+</ul>
+<h2>함께 시도했지만 넣지 않은 것</h2>
+<ul>
+<li><b>날짜별 순위 지표</b>: 같은 날 전 종목 중 몇 등인지로 바꾼 지표를 더해 봤지만 AUC가 오르지 않았습니다.</li>
+<li><b>시장 지수 흐름</b>: 종목별 AI에 코스피·코스닥 지수의 5·20일 수익률과 변동성을 넣어 봤지만 정확도가 오르지 않아 꺼 두었습니다.</li>
+</ul>
+<h2>이 실험 뒤 바뀐 것</h2>
+<p>한국 종목은 모두 전 종목 통합 AI로 계산하게 됐습니다. 매일 2,400여 개 종목의 지표를 20개 묶음으로 나눠 동시에 계산한 뒤, 한 번에 모아 학습합니다.
+이 구조 덕분에 "오늘 전 종목 중 상승 확률 순위" 같은 화면도 만들 수 있게 됐습니다.</p>
 <div class=box><p>📱 이 글에서 설명한 지표와 확률은 <a href="app/">스톡시그널 앱</a>에서 종목마다 바로 확인할 수 있어요.</p><p>⚠️ 모든 내용은 공부를 위한 참고 자료이며 투자 권유가 아닙니다. <a href="disclaimer.html">투자 유의사항</a></p></div></article>
 </main>
 <footer>

@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.2.1
+/* 스톡시그널 앱 v2.2.2
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.2.1";
+const VERSION = "2.2.2";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -396,7 +396,8 @@ function idxNote(j) {
   const a = (k) => (j[k] ? `${Math.round(j[k].acc * 100)}%` : "-"), b = (k) => (j[k] ? `${Math.round(j[k].base_acc * 100)}%` : "-");
   const later = j.KOSPI.for <= today && !(j.KOSPI.for === today && marketState().includes("장 중"));
   return `<p class="muted small" style="margin:8px 0 0">🤖 = AI가 본 '오늘 장 마감이 어제보다 오를 확률'. 어젯밤 미국 증시 마감까지 반영해 평일 아침 7시쯤 계산해요${later ? " (다음 확률은 다음 거래일 아침에 나와요)" : ""}.
-    과거 10년 시험 적중률 코스피 ${a("KOSPI")}·코스닥 ${a("KOSDAQ")} (늘 '오른다'고 하면 ${b("KOSPI")}·${b("KOSDAQ")})${done.length ? ` · 실제 기록 ${done.length}번 중 ${hits}번 맞힘` : ""}.</p>`;
+    과거 10년 시험 적중률 코스피 ${a("KOSPI")}·코스닥 ${a("KOSDAQ")} (늘 '오른다'고 하면 ${b("KOSPI")}·${b("KOSDAQ")})${done.length ? ` · 실제 기록 ${done.length}번 중 ${hits}번 맞힘` : ""}.
+    ⚠️ 맞히는 힘은 대부분 '아침에 높게 시작할지'에서 나와요. 장이 열린 뒤 방향은 맞히지 못했어요. (자세한 시험 기록: 더보기 → 연구 기록 ⑥)</p>`;
 }
 
 // ───────── 🏠 홈 ─────────
