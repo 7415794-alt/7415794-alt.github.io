@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.3.0
+/* 스톡시그널 앱 v2.4.0
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.3.0";
+const VERSION = "2.4.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -408,6 +408,78 @@ function idxNote(j) {
     ⚠️ 맞히는 힘은 대부분 '아침에 높게 시작할지'에서 나와요. 장이 열린 뒤 방향은 맞히지 못했어요. (자세한 시험 기록: 더보기 → 연구 기록 ⑥)</p>`;
 }
 
+// ───────── ☀️ 아침 브리핑 ─────────
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+const dayTxt = (iso) => { const d = new Date(iso + "T00:00:00+09:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`; };
+// 그날이 옵션 만기일(매달 둘째 목요일)인지, 3·6·9·12월이면 동시 만기
+function expiryOf(iso) {
+  const d = new Date(iso + "T00:00:00+09:00");
+  const first = new Date(d.getFullYear(), d.getMonth(), 1).getDay();
+  const second = 1 + ((4 - first + 7) % 7) + 7;
+  return d.getDate() === second ? ([2, 5, 8, 11].includes(d.getMonth()) ? "quad" : "opt") : "";
+}
+function usLine(us) {
+  const g = (n) => us.find((x) => x.n === n);
+  const big = ["S&P 500", "나스닥", "다우"].map(g).filter(Boolean);
+  const ups = big.filter((x) => x.c > 0).length;
+  const parts = [];
+  if (big.length) parts.push(ups === big.length ? "미국 3대 지수가 모두 올랐어요" : ups === 0 ? "미국 3대 지수가 모두 내렸어요" : "미국 지수가 엇갈렸어요");
+  const sox = g("필라델피아 반도체");
+  if (sox && Math.abs(sox.c) >= 1.5) parts.push(`반도체 지수가 ${pctTxt(sox.c, 1)} 크게 ${sox.c > 0 ? "올라 반도체주에 관심이 쏠릴 수 있어요" : "내려 반도체주가 약할 수 있어요"}`);
+  const vix = g("공포지수(VIX)");
+  if (vix && vix.v >= 25) parts.push(`공포지수가 ${vix.v.toFixed(1)}로 불안한 분위기예요`);
+  const fx = g("원/달러 환율");
+  if (fx && Math.abs(fx.c) >= 0.5) parts.push(`환율이 ${pctTxt(fx.c, 1)} 움직였어요`);
+  return parts.join(". ") + (parts.length ? "." : "");
+}
+route(/^\/brief/, async () => {
+  const [, , ij] = await Promise.all([loadIndex(), loadLive(), getJSON(IDXP, 600000).catch(() => null)]);
+  const today = kstToday();
+  const day = ij && ij.KOSPI && ij.KOSPI.for >= today ? ij.KOSPI.for : today;
+  const us = (ij && ij.us) || [];
+  const usHtml = us.length ? `<div class="split">${us.map((x) => `<div class="stat"><small>${esc(x.n)}</small>
+      <b>${x.v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}${x.n.includes("환율") ? "원" : x.n.includes("금리") ? "%" : ""}</b>
+      <div class="${x.n.includes("VIX") || x.n.includes("환율") ? "" : cls(x.c)}">${x.c > 0 ? "▲" : x.c < 0 ? "▼" : ""}${pctTxt(x.c, 2)}</div></div>`).join("")}</div>
+      <p class="small" style="margin:8px 0 0">${esc(usLine(us))}</p>` : `<div class="muted small">미국 증시 요약은 평일 아침 7시쯤 나와요.</div>`;
+  const idxCards = ["KOSPI", "KOSDAQ"].map((k) => `<div class="stat"><small>${k === "KOSPI" ? "코스피" : "코스닥"}</small>
+      <b>${ij && ij[k] ? won(ij[k].close) : "-"}</b><div class="small muted">${ij && ij[k] ? mdOf(ij[k].base) + " 종가" : ""}</div>${idxProb(ij, k)}</div>`).join("");
+  let th = [];
+  try { th = await getJSON(DATA + "themes.json", 3600000); } catch { /* 없음 */ }
+  const ths = th.filter((t) => t.chg != null).sort((a, b) => b.chg - a.chg);
+  const thRow = (t) => `<a class="row" href="#/t/${t.no}"><div class="nm"><b>${esc(t.name)}</b></div><div class="rt"><b class="${cls(t.chg)}">${pctTxt(t.chg, 1)}</b></div></a>`;
+  const oldH = H; H = 1;
+  const top = INDEX.filter((s) => s.p1 != null && !s.managed && !s.alert && !s.halted).sort((a, b) => b.p1 - a.p1).slice(0, 5);
+  const topHtml = top.map((s, i) => stockRow(s, { rank: i + 1 })).join("");
+  const favHtml = favs().length ? favList(5) : "";
+  H = oldH;
+  const ex = expiryOf(day);
+  const sched = [];
+  if (ex) sched.push(ex === "quad" ? "📌 오늘은 <b>선물·옵션 동시 만기일</b>이에요. 장 마감 무렵 큰 물량이 오가며 가격이 출렁일 수 있어요." : "📌 오늘은 <b>옵션 만기일</b>이에요. 장 마감 무렵 지수가 출렁일 수 있어요.");
+  const d0 = new Date(day + "T00:00:00+09:00");
+  for (let i = 1; i <= 6; i++) {
+    const dd = new Date(d0.getTime() + i * 864e5), iso = new Date(dd.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+    if (dd.getDay() === 0 || dd.getDay() === 6) continue;
+    const e = expiryOf(iso);
+    if (e) { sched.push(`🗓️ ${dayTxt(iso)}은 ${e === "quad" ? "선물·옵션 동시 만기일" : "옵션 만기일"}이에요.`); break; }
+  }
+  if (d0.getDate() >= 24) sched.push("🗓️ 월말이 가까워요. 펀드 결산·리밸런싱으로 대형주 거래가 늘 수 있어요.");
+  const sc = await scorecardHtml(true);
+  return `
+  <div class="card"><h2>☀️ ${dayTxt(day)} 아침 브리핑</h2>
+    <p class="small muted" style="margin:0">장 시작 전에 알아 두면 좋은 것만 모았어요. ${ij && ij.t ? `${mdOf(ij.t.slice(0, 10))} ${esc(ij.t.slice(11))} 계산` : ""}</p></div>
+  <div class="card"><h2>🌎 어젯밤 미국 증시</h2>${usHtml}</div>
+  <div class="card"><h2>🤖 오늘 코스피·코스닥</h2><div class="mkt">${idxCards}</div>${idxNote(ij)}</div>
+  ${sched.length ? `<div class="card"><h2>📅 오늘의 일정</h2>${sched.map((x) => `<p class="small" style="margin:4px 0">${x}</p>`).join("")}</div>` : ""}
+  ${sc}
+  ${ths.length ? `<div class="card"><h2>🧩 어제 테마 흐름 <a class="small muted" href="#/themes">전체 ›</a></h2>
+    <p class="small" style="margin:4px 0"><b>강했던 테마</b></p>${ths.slice(0, 3).map(thRow).join("")}
+    <p class="small" style="margin:10px 0 4px"><b>약했던 테마</b></p>${ths.slice(-3).reverse().map(thRow).join("")}</div>` : ""}
+  ${favHtml ? `<div class="card"><h2>⭐ 내 관심 종목 <small>1일 뒤 확률</small> <a class="small muted" href="#/my">전체 ›</a></h2>${favHtml}</div>` : ""}
+  <div class="card"><h2>🔥 AI가 본 오늘 상승 확률 TOP 5 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>${topHtml}
+    <p class="muted small">어제 장 마감까지의 자료로 계산한 '1거래일 뒤' 확률이에요. 추천이 아니라 참고 정보예요.</p></div>
+  ${foot()}`;
+}, "home");
+
 // ───────── 🏠 홈 ─────────
 route(/^\/$/, async () => {
   const [, , ij] = await Promise.all([loadIndex(), loadLive(), getJSON(IDXP, 600000).catch(() => null)]);
@@ -424,6 +496,8 @@ route(/^\/$/, async () => {
   const sc = await scorecardHtml(true);
   return `
   ${catBar()}
+  <a class="card" href="#/brief" style="display:block"><h2 style="margin:0">☀️ 아침 브리핑 <small>›</small></h2>
+    <p class="small muted" style="margin:4px 0 0">어젯밤 미국 증시 · 코스피 확률 · 오늘 일정 · 어제 AI 성적을 한 화면에</p></a>
   <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div>${idxNote(ij)}</a>
   ${sc}
   <div class="toolbar">${segH()}<span class="muted small">AI 기준일 ${esc(META?.date || "-")}</span></div>
