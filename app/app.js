@@ -1,8 +1,8 @@
-/* 스톡시그널 앱 v2.4.0
+/* 스톡시그널 앱 v2.4.1
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.4.0";
+const VERSION = "2.4.1";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -54,7 +54,7 @@ async function loadIndex() {
   const c = ix.cols;
   INDEX = ix.rows.map((r) => Object.fromEntries(c.map((k, i) => [k, r[i]])));
   INDEX.forEach((s) => {
-    s.key = (s.name + s.code + (ALIAS[s.code] || "")).toLowerCase().replace(/\s/g, "") + "|" + chosung(s.name);
+    s.key = (s.name + s.code + (ALIAS[s.code] || "") + (s.alt || "")).toLowerCase().replace(/\s/g, "") + "|" + chosung(s.name) + "|" + chosung(s.alt || "");
     BYCODE.set(s.code, s);
   });
   return INDEX;
@@ -155,8 +155,8 @@ function searchList(text, n = 8) {
   for (const s of INDEX) {
     const i = s.key.indexOf(k);
     if (i < 0) continue;
-    const al = ALIAS[s.code] && ALIAS[s.code].toLowerCase().includes(k);
-    const score = (s.name.toLowerCase().replace(/\s/g, "") === k || s.code === k ? 0 : al ? 0.6 : i === 0 ? 1 : 2) + (s.p5 == null ? 0.5 : 0);
+    const al = (ALIAS[s.code] || "").toLowerCase().includes(k) || (s.alt || "").toLowerCase().replace(/\s/g, "").includes(k);
+    const score = (s.name.toLowerCase().replace(/\s/g, "") === k || s.code.toLowerCase() === k ? 0 : al ? 0.6 : i === 0 ? 1 : 2) + (s.p5 == null ? 0.5 : 0);
     out.push([score, s.name.length, s]);
   }
   out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -514,7 +514,7 @@ route(/^\/$/, async () => {
 }, "home");
 
 // ───────── 📈 종목 분석 ─────────
-route(/^\/s\/(\d{6})/, async (code) => {
+route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   view.innerHTML = `<div class="loading">AI 분석 불러오는 중…</div>`;
   await loadIndex().catch(() => null);
   loadLive();
@@ -1119,7 +1119,7 @@ route(/^\/market/, async () => {
 }, "home");
 
 // ───────── 🆚 비교 ─────────
-route(/^\/cmp(?:\?(\d{6})?-(\d{6})?)?/, async (a, b) => {
+route(/^\/cmp(?:\?([0-9A-Z]{6})?-([0-9A-Z]{6})?)?/, async (a, b) => {
   await Promise.all([loadIndex(), loadLive()]);
   const nameOf = (c) => (c && BYCODE.get(c) ? BYCODE.get(c).name : "");
   after(() => {
