@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.5.0";
+const VERSION = "2.5.1";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -887,13 +887,19 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     <p class="muted small">네이버 증권 자료(매일 오후 5시 기준). 적자 기업은 PER이 '-'로 나와요. AI 확률 계산에는 쓰지 않는 참고 정보예요.</p></div>`;
 
   after(() => {
-    drawChart($("#chart"), d.chart, store.get("ss-range", 120));
+    const redraw = () => drawChart($("#chart"), d.chart, store.get("ss-range", 120), store.get("ss-ctype", "d") === "w");
+    redraw();
+    document.querySelectorAll("[data-ctype]").forEach((b) => b.onclick = () => {
+      store.set("ss-ctype", b.dataset.ctype);
+      document.querySelectorAll("[data-ctype]").forEach((x) => x.classList.toggle("on", x === b));
+      redraw();
+    });
     $("#fav").onclick = () => { const on = toggleFav(code); $("#fav").textContent = on ? "★" : "☆"; };
     $("#share").onclick = () => share(d.name, code, P);
     document.querySelectorAll("[data-range]").forEach((b) => b.onclick = () => {
       store.set("ss-range", +b.dataset.range);
       document.querySelectorAll("[data-range]").forEach((x) => x.classList.toggle("on", x === b));
-      drawChart($("#chart"), d.chart, +b.dataset.range);
+      redraw();
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
     document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = () => {
@@ -912,7 +918,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
         { ref: 0, fmt: (v) => Math.round(v) + "%", h: 180 });
     });
   });
-  const rg = store.get("ss-range", 120);
+  const rg = store.get("ss-range", 120), ct = store.get("ss-ctype", "d");
   return `
   <div class="card">
     <div class="head"><div><h1>${esc(d.name)}${flags}</h1><div class="muted small">${code} · ${d.market === "KOSPI" ? "코스피" : "코스닥"}</div></div>
@@ -925,7 +931,8 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     <p class="muted small" style="text-align:center">AI 기준일 ${esc(d.date)} 종가 · 매일 오후 5시 새로 계산</p>${sumHtml}
     <a class="more" href="#/cmp?${code}-" style="text-align:center">🆚 다른 종목과 비교하기</a></div>
   <div class="card"><h2>📈 주가 <span class="seg">${[[20, "1개월"], [60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
-    <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo">봉 = 하루 가격 (<span class="up">빨강</span> 오른 날 · <span class="down">파랑</span> 내린 날, 가는 선은 최고·최저) · <span style="color:#f59e0b">주황</span> 20일 평균 · <span style="color:#8b5cf6">보라</span> 60일 평균 · 아래 막대 = 거래량</p></div>
+    <div class="seg" style="margin:0 0 6px">${[["d", "일봉"], ["w", "주봉"]].map(([k, l]) => `<button data-ctype="${k}" class="${k === ct ? "on" : ""}">${l}</button>`).join("")}</div>
+    <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo"></p></div>
   ${voteHtml}
   <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
   ${flHtml}${thHtml}${newsHtml}${finHtml}
@@ -943,13 +950,36 @@ async function share(name, code, P) {
   } catch { /* 취소 */ }
 }
 
-// 차트 (봉 차트: 빨강 = 오른 날, 파랑 = 내린 날 + 20·60일 평균 + 거래량)
-function drawChart(cv, ch, n) {
+// 일봉 → 주봉 (월~금 한 주를 봉 하나로: 시작 = 첫날 시가, 마감 = 마지막 날 종가, 거래량 = 합계)
+function toWeeks(ch) {
+  const w = { d: [], o: [], h: [], l: [], c: [], v: [] };
+  let key = null;
+  ch.c.forEach((c, i) => {
+    const s = String(ch.d[i]).padStart(6, "0");
+    const dt = new Date(2000 + +s.slice(0, 2), +s.slice(2, 4) - 1, +s.slice(4));
+    const mon = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - ((dt.getDay() + 6) % 7)).getTime();
+    const o = ch.o ? ch.o[i] : c, h = ch.h ? ch.h[i] : c, l = ch.l ? ch.l[i] : c, v = ch.v[i] || 0;
+    if (mon !== key) {
+      key = mon;
+      w.d.push(ch.d[i]); w.o.push(o); w.h.push(h); w.l.push(l); w.c.push(c); w.v.push(v);
+    } else {
+      const k = w.c.length - 1;
+      w.d[k] = ch.d[i]; w.h[k] = Math.max(w.h[k], h); w.l[k] = Math.min(w.l[k], l); w.c[k] = c; w.v[k] += v;
+    }
+  });
+  return w;
+}
+const CHART_TXT = (wk) => `봉 하나 = ${wk ? "한 주" : "하루"} 가격 (<span class="up">빨강</span> 오름 · <span class="down">파랑</span> 내림, 가는 선은 최고·최저) · <span style="color:#f59e0b">주황</span> ${wk ? "5주" : "20일"} 평균 · <span style="color:#8b5cf6">보라</span> ${wk ? "20주" : "60일"} 평균 · 아래 막대 = 거래량`;
+
+// 차트 (봉 차트: 빨강 = 오른 날, 파랑 = 내린 날 + 평균선 + 거래량). wk = 주봉
+function drawChart(cv, ch, n, wk) {
   if (!cv || !ch || !ch.c.length) return;
+  if (wk) { ch = toWeeks(ch); n = Math.max(8, Math.ceil(n / 5)); }
+  $("#chartinfo").innerHTML = CHART_TXT(wk);
   const css = getComputedStyle(document.documentElement);
   const col = (v) => css.getPropertyValue(v).trim();
   const ma = (k) => ch.c.map((_, i) => (i + 1 < k ? null : ch.c.slice(i + 1 - k, i + 1).reduce((a, b) => a + b, 0) / k));
-  const m20 = ma(20), m60 = ma(60);
+  const m20 = ma(wk ? 5 : 20), m60 = ma(wk ? 20 : 60);
   const st = Math.max(0, ch.c.length - n);
   const cut = (a) => (a || ch.c).slice(st);
   const C = cut(ch.c), O = cut(ch.o), Hi = cut(ch.h), Lo = cut(ch.l), V = cut(ch.v), D = cut(ch.d), A = m20.slice(st), B = m60.slice(st);
@@ -1024,7 +1054,7 @@ function drawChart(cv, ch, n) {
     const i = at(e);
     frame(i);
     const ch1 = i ? (C[i] / C[i - 1] - 1) * 100 : null;
-    info.innerHTML = `<b>${ymd(D[i])}</b> 종가 ${won(C[i])}원 <span class="${cls(ch1)}">${pctTxt(ch1)}</span><br>시작 ${won(O[i])} · 최고 ${won(Hi[i])} · 최저 ${won(Lo[i])} · 거래량 ${won(V[i])}`;
+    info.innerHTML = `<b>${ymd(D[i])}${wk ? " 주" : ""}</b> 종가 ${won(C[i])}원 <span class="${cls(ch1)}">${pctTxt(ch1)}</span><br>시작 ${won(O[i])} · 최고 ${won(Hi[i])} · 최저 ${won(Lo[i])} · 거래량 ${won(V[i])}`;
   };
   const hide = () => { frame(null); info.innerHTML = base; };
   cv.onmousemove = show; cv.onmouseleave = hide;
