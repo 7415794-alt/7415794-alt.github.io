@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.5.2";
+const VERSION = "2.5.3";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -1087,6 +1087,11 @@ async function indTable(d) {
       rows.unshift(`<tr><td>+</td><td><b>수급 (외국인·기관·개인)</b> <small class="muted">수급</small><br><small class="muted">최근 5일 순매수 ÷ 평소 거래량</small>
         <br><small>현재 ${["fl_frg5", "fl_org5", "fl_ind5"].map((c) => fmtInd(c, d.ind[c])).join(" · ")}</small></td>
         <td class="r">✅ ${(fl.reduce((a, c) => a + imp[c], 0) * 100).toFixed(1)}%</td></tr>`);
+    }
+    const dk = Object.keys(imp).filter((c) => c.startsWith("er_") || c.startsWith("fin_"));
+    if (dk.length) {
+      rows.unshift(`<tr><td>+</td><td><b>실적 발표·재무 (전자공시)</b> <small class="muted">공시</small><br><small class="muted">실적 발표 전후 시점, 매출·이익 증가, 이익률, 부채비율 (공시 다음 날부터 반영)</small></td>
+        <td class="r">✅ ${(dk.reduce((a, c) => a + imp[c], 0) * 100).toFixed(1)}%</td></tr>`);
     }
     const o = I.oos[String(H)] || {};
     box.className = "";
