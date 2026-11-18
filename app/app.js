@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.4.1";
+const VERSION = "2.5.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -219,7 +219,8 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 
 // ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
 const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/screen", "🔎", "조건검색"],
-  ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"]];
+  ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
+  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
@@ -270,7 +271,7 @@ async function scorecardHtml(compact) {
   const md = (x) => `${+x.slice(5, 7)}/${+x.slice(8, 10)}`;
   const pc = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   if (compact) {
-    return `<a class="card" href="#/rank?up" style="display:block"><h2>📋 어제 AI 성적표 <small>${md(r.date)} 예측 → ${md(r.eval_date)} 결과 ›</small></h2>
+    return `<a class="card" href="#/score" style="display:block"><h2>📋 어제 AI 성적표 <small>${md(r.date)} 예측 → ${md(r.eval_date)} 결과 · 자세히 ›</small></h2>
       <div class="split">
       ${r.all_n ? `<div class="stat"><small>전 종목 적중률</small><b>${pc(r.all_hit, r.all_n)}%</b><div class="small muted">${won(r.all_n)}개 중 ${won(r.all_hit)}개 맞힘</div></div>` : ""}
       <div class="stat"><small>📈 상승 TOP 20</small><b>${pc(r.up_hit, r.up_n)}%</b><div class="small muted">${r.up_n}개 중 ${r.up_hit}개 실제 상승</div></div>
@@ -469,7 +470,7 @@ route(/^\/brief/, async () => {
     <p class="small muted" style="margin:0">장 시작 전에 알아 두면 좋은 것만 모았어요. ${ij && ij.t ? `${mdOf(ij.t.slice(0, 10))} ${esc(ij.t.slice(11))} 계산` : ""}</p></div>
   <div class="card"><h2>🌎 어젯밤 미국 증시</h2>${usHtml}</div>
   <div class="card"><h2>🤖 오늘 코스피·코스닥</h2><div class="mkt">${idxCards}</div>${idxNote(ij)}</div>
-  ${sched.length ? `<div class="card"><h2>📅 오늘의 일정</h2>${sched.map((x) => `<p class="small" style="margin:4px 0">${x}</p>`).join("")}</div>` : ""}
+  ${sched.length ? `<div class="card"><h2>📅 오늘의 일정 <a class="small muted" href="#/cal">달력 ›</a></h2>${sched.map((x) => `<p class="small" style="margin:4px 0">${x}</p>`).join("")}</div>` : ""}
   ${sc}
   ${ths.length ? `<div class="card"><h2>🧩 어제 테마 흐름 <a class="small muted" href="#/themes">전체 ›</a></h2>
     <p class="small" style="margin:4px 0"><b>강했던 테마</b></p>${ths.slice(0, 3).map(thRow).join("")}
@@ -477,6 +478,214 @@ route(/^\/brief/, async () => {
   ${favHtml ? `<div class="card"><h2>⭐ 내 관심 종목 <small>1일 뒤 확률</small> <a class="small muted" href="#/my">전체 ›</a></h2>${favHtml}</div>` : ""}
   <div class="card"><h2>🔥 AI가 본 오늘 상승 확률 TOP 5 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>${topHtml}
     <p class="muted small">어제 장 마감까지의 자료로 계산한 '1거래일 뒤' 확률이에요. 추천이 아니라 참고 정보예요.</p></div>
+  ${foot()}`;
+}, "home");
+
+// 막대 그래프 (날짜별 적중률 등): bars = [{v, color}], dots = 비교용 가로 표시
+function drawBars(cv, labels, bars, opt = {}) {
+  if (!cv || !labels.length) return;
+  const css = getComputedStyle(document.documentElement);
+  const col = (v) => (v.startsWith("--") ? css.getPropertyValue(v).trim() : v);
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = opt.h || 180;
+  cv.width = W * dpr; cv.height = Hh * dpr; cv.style.height = Hh + "px";
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  const pad = { l: 4, r: 40, t: 8, b: 18 }, ph = Hh - pad.t - pad.b;
+  const [lo, hi] = opt.range || [0, 100];
+  const step = (W - pad.l - pad.r) / labels.length, bw = Math.max(2, Math.min(18, step * 0.7));
+  const x = (i) => pad.l + step * (i + 0.5);
+  const y = (v) => pad.t + ph * (1 - (v - lo) / (hi - lo));
+  g.font = "11px sans-serif"; g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + (hi - lo) * k / 4, yy = y(v);
+    g.strokeStyle = col("--line"); g.beginPath(); g.moveTo(pad.l, yy); g.lineTo(W - pad.r, yy); g.stroke();
+    g.fillStyle = col("--muted"); g.fillText(opt.fmt ? opt.fmt(v) : Math.round(v), W - pad.r + 4, yy + 4);
+  }
+  bars.forEach((b, i) => {
+    if (b.v == null) return;
+    g.fillStyle = col(b.color);
+    const top = y(Math.max(lo, Math.min(hi, b.v))), base = y(lo);
+    g.fillRect(x(i) - bw / 2, top, bw, Math.max(1, base - top));
+  });
+  if (opt.dots) {
+    g.fillStyle = col("--fg");
+    opt.dots.forEach((v, i) => { if (v == null) return; g.fillRect(x(i) - bw / 2 - 1, y(v) - 1, bw + 2, 2.5); });
+  }
+  g.fillStyle = col("--muted");
+  g.fillText(ymd(labels[0]), pad.l, Hh - 4);
+  const last = ymd(labels[labels.length - 1]);
+  g.fillText(last, W - pad.r - g.measureText(last).width, Hh - 4);
+}
+
+// ───────── 📋 AI 성적표 자세히 ─────────
+route(/^\/score/, async () => {
+  const [, card, ij] = await Promise.all([loadIndex(), getJSON(DATA + "scorecard.json", 3600000).catch(() => []), getJSON(IDXP, 600000).catch(() => null)]);
+  if (!card || !card.length) return `<div class="empty">아직 채점 기록이 없어요.</div>${foot()}`;
+  const pc = (a, b) => (b ? Math.round((a / b) * 100) : null);
+  const md = mdOf;
+  const r = card[card.length - 1];
+  // 기간별 요약
+  const per = (n) => {
+    const l = card.slice(-n), s = (k) => l.reduce((a, x) => a + (x[k] || 0), 0);
+    const wins = l.filter((x) => x.up_hit / x.up_n > x.all_up).length;
+    return { n: l.length, up: pc(s("up_hit"), s("up_n")), down: pc(s("down_hit"), s("down_n")), mk: Math.round(s("all_up") / l.length * 100), wins };
+  };
+  const ps = [5, 20, 60].filter((n, i, a) => i === 0 || card.length > a[i - 1]).map(per);
+  const sumTable = `<table><tr><th>기간</th><th class="r">상승<br>TOP20</th><th class="r">하락<br>TOP20</th><th class="r">전체<br>상승</th><th class="r">시장보다<br>잘한 날</th></tr>
+    ${ps.map((p) => `<tr><td style="white-space:nowrap">${p.n}일</td><td class="r"><b>${p.up}%</b></td><td class="r">${p.down}%</td><td class="r">${p.mk}%</td><td class="r">${p.wins}/${p.n}</td></tr>`).join("")}</table>`;
+  const labels = card.map((x) => yymmdd(x.date));
+  // AI 따라 샀다면: 매일 상승 TOP 20을 똑같이 나눠 사서 다음 날 판 경우 (수수료·세금 빼기 전)
+  let a = 100, m = 100;
+  const curA = card.map((x) => (a *= 1 + (x.up_avg || 0))), curM = card.map((x) => (m *= 1 + (x.all_avg || 0)));
+  // 어제 TOP 20 종목별 결과
+  let picks = "";
+  if (META && META.prev_date === r.date) {
+    const pool = INDEX.filter((s) => s.q1 != null && s.chg != null && !s.halted);
+    const row = (s, i, want) => {
+      const ok = want > 0 ? s.chg > 0 : s.chg < 0;
+      return `<a class="row" href="#/s/${s.code}"><div class="nm"><b>${i + 1}. ${esc(s.name)}</b><small>어제 AI 확률 ${Math.round(s.q1 * 100)}%</small></div>
+        <div class="rt"><b class="${cls(s.chg)}">${pctTxt(s.chg * 100, 1)}</b><small>${ok ? "✅ 맞음" : "❌ 틀림"}</small></div></a>`;
+    };
+    const up = [...pool].sort((x, y) => y.q1 - x.q1).slice(0, 20), dn = [...pool].sort((x, y) => x.q1 - y.q1).slice(0, 20);
+    picks = `<div class="card"><h2>🔍 어제 고른 종목, 오늘 결과 <small>${md(r.date)} → ${md(r.eval_date)}</small></h2>
+      <div class="seg" data-pk style="margin-bottom:6px"><button data-v="up" class="on">📈 상승 TOP 20</button><button data-v="dn">📉 하락 TOP 20</button></div>
+      <div id="pk-up">${up.map((s, i) => row(s, i, 1)).join("")}</div><div id="pk-dn" hidden>${dn.map((s, i) => row(s, i, -1)).join("")}</div>
+      <p class="muted small">'1거래일 뒤' 확률 기준. 상승 TOP 20은 오르면, 하락 TOP 20은 내리면 맞은 거예요.</p></div>`;
+  }
+  // 코스피·코스닥 예측 기록
+  const ih = ((ij && ij.hist) || []).filter((h) => h.r != null && h.r !== 0).slice(-40).reverse();
+  const ihit = ih.filter((h) => (h.p >= 0.5) === (h.r > 0)).length;
+  const idxHtml = ih.length ? `<div class="card"><h2>🤖 코스피·코스닥 예측 기록 <small>${ih.length}번 중 ${ihit}번 맞힘</small></h2>
+    <table><tr><th>날짜</th><th>지수</th><th class="r">AI 확률</th><th class="r">실제</th><th class="r">결과</th></tr>
+    ${ih.slice(0, 20).map((h) => `<tr><td>${md(h.for)}</td><td>${h.k === "KOSPI" ? "코스피" : "코스닥"}</td><td class="r">${Math.round(h.p * 100)}%</td>
+      <td class="r ${cls(h.r)}">${pctTxt(h.r * 100, 1)}</td><td class="r">${(h.p >= 0.5) === (h.r > 0) ? "✅" : "❌"}</td></tr>`).join("")}</table></div>` : "";
+  // 종목별 적중률 평균 (최근 60번 예측 기준)
+  const dist = [1, 5, 20].map((h) => {
+    const v = INDEX.map((s) => s["hr" + h]).filter((x) => x != null);
+    if (!v.length) return "";
+    const avg = v.reduce((p, q) => p + q, 0) / v.length, over = v.filter((x) => x >= 0.6).length;
+    return `<div class="stat"><small>${h}일 뒤 예측</small><b>${Math.round(avg * 100)}%</b><div class="small muted">60% 이상 맞힌 종목 ${won(over)}개 (${Math.round(over / v.length * 100)}%)</div></div>`;
+  }).join("");
+
+  after(() => {
+    drawBars($("#sc-bar"), labels, card.map((x) => ({ v: pc(x.up_hit, x.up_n), color: x.up_hit / x.up_n > x.all_up ? "--up" : "--down" })),
+      { dots: card.map((x) => x.all_up * 100), fmt: (v) => v + "%" });
+    drawLines($("#sc-line"), labels, [{ v: curA, color: "--up" }, { v: curM, color: "--muted", w: 1.5 }], { ref: 100, fmt: (v) => v.toFixed(0) });
+    const seg = document.querySelector("[data-pk]");
+    if (seg) seg.onclick = (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+      $("#pk-up").hidden = b.dataset.v !== "up"; $("#pk-dn").hidden = b.dataset.v === "up";
+    };
+  });
+  return `
+  <div class="card"><h2>📋 AI 성적표 자세히</h2>
+    <p class="small muted" style="margin:0">매일 AI가 고른 '1거래일 뒤' 상승·하락 TOP 20이 실제로 맞았는지 채점한 기록이에요. 좋은 날만 골라 보여 주지 않고 모두 공개해요.</p></div>
+  ${await scorecardHtml(true)}
+  <div class="card"><h2>📊 기간별 적중률</h2>${sumTable}
+    <p class="muted small">'전체 상승' = 그 기간 하루 평균 몇 % 종목이 올랐는지. 상승 TOP 20 적중률이 이것보다 높아야 AI가 의미 있게 고른 거예요.</p></div>
+  <div class="card"><h2>📅 날짜별 상승 TOP 20 적중률</h2><canvas id="sc-bar"></canvas>
+    <p class="muted small"><span class="up">■</span> 시장보다 잘한 날 · <span class="down">■</span> 시장보다 못한 날 · <b>▬</b> 그날 전체 종목 중 오른 비율</p></div>
+  <div class="card"><h2>💰 AI를 따라 샀다면? <small>최근 ${card.length}일</small></h2><canvas id="sc-line"></canvas>
+    ${legend([["var(--up)", `상승 TOP 20 매일 사고팔기 ${pctTxt(curA[curA.length - 1] - 100, 1)}`], ["var(--muted)", `전 종목 평균 ${pctTxt(curM[curM.length - 1] - 100, 1)}`]])}
+    <p class="muted small">100에서 시작해 매일 상승 TOP 20을 똑같이 나눠 사고 다음 날 종가에 판 경우예요. 수수료·세금은 빼지 않았고, 실제로는 이만큼 벌기 어려워요.</p></div>
+  ${picks}
+  <div class="card"><h2>🎯 종목별 적중률 평균</h2><div class="split">${dist}</div>
+    <p class="muted small">각 종목의 최근 60번 예측 중 맞힌 비율을 전 종목 평균한 값이에요. 종목 화면에서 그 종목만의 적중률을 볼 수 있어요.</p></div>
+  ${idxHtml}
+  <div class="card"><h2>🗂️ 날짜별 전체 기록</h2><table><tr><th>예측일</th><th class="r">상승<br>TOP20</th><th class="r">평균</th><th class="r">하락<br>TOP20</th><th class="r">전체<br>상승</th></tr>
+    ${[...card].reverse().map((x) => `<tr><td>${md(x.date)}</td><td class="r">${x.up_hit}/${x.up_n}</td><td class="r ${cls(x.up_avg)}">${pctTxt(x.up_avg * 100, 1)}</td>
+      <td class="r">${x.down_hit}/${x.down_n}</td><td class="r">${Math.round(x.all_up * 100)}%</td></tr>`).join("")}</table></div>
+  ${foot()}`;
+}, "rank");
+
+// ───────── 📅 일정 달력 ─────────
+// 휴장일 (한국거래소 기준, 바뀔 수 있음)
+const HOLI = {
+  "2026-01-01": "신정", "2026-02-16": "설 연휴", "2026-02-17": "설날", "2026-02-18": "설 연휴", "2026-03-02": "삼일절 대체 휴일",
+  "2026-05-01": "근로자의 날", "2026-05-05": "어린이날", "2026-05-25": "부처님오신날 대체 휴일", "2026-06-03": "지방선거",
+  "2026-08-17": "광복절 대체 휴일", "2026-09-24": "추석 연휴", "2026-09-25": "추석", "2026-10-05": "개천절 대체 휴일",
+  "2026-10-09": "한글날", "2026-12-25": "성탄절", "2026-12-31": "연말 휴장",
+  "2027-01-01": "신정", "2027-02-08": "설 연휴", "2027-02-09": "설 대체 휴일", "2027-03-01": "삼일절", "2027-05-05": "어린이날",
+  "2027-05-13": "부처님오신날", "2027-08-16": "광복절 대체 휴일", "2027-09-14": "추석 연휴", "2027-09-15": "추석", "2027-09-16": "추석 연휴",
+  "2027-10-04": "개천절 대체 휴일", "2027-10-11": "한글날 대체 휴일", "2027-12-27": "성탄절 대체 휴일", "2027-12-31": "연말 휴장",
+};
+// 미국 FOMC 금리 결정 (한국 시간으로 다음 날 새벽 발표)
+const FOMC = ["2026-01-29", "2026-03-19", "2026-04-30", "2026-06-18", "2026-07-30", "2026-09-17", "2026-10-29", "2026-12-10"];
+const isoOf = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const isOpen = (y, m, d) => { const w = new Date(y, m, d).getDay(); return w !== 0 && w !== 6 && !HOLI[isoOf(y, m, d)]; };
+function monthEvents(y, m) {
+  const ev = {};
+  const add = (d, t, k) => { const key = isoOf(y, m, d); (ev[key] = ev[key] || []).push({ t, k }); };
+  const last = new Date(y, m + 1, 0).getDate();
+  for (let d = 1; d <= last; d++) if (HOLI[isoOf(y, m, d)]) add(d, `휴장 (${HOLI[isoOf(y, m, d)]})`, "off");
+  // 옵션 만기: 둘째 목요일, 쉬는 날이면 그 전 거래일
+  const quad = [2, 5, 8, 11].includes(m);
+  let ex = 1 + ((4 - new Date(y, m, 1).getDay() + 7) % 7) + 7;
+  while (ex > 1 && !isOpen(y, m, ex)) ex--;
+  add(ex, quad ? "선물·옵션 동시 만기일" : "옵션 만기일", quad ? "big" : "mid");
+  // 그달 마지막 거래일
+  let ld = last;
+  while (ld > 1 && !isOpen(y, m, ld)) ld--;
+  if (m === 11) add(ld, "올해 마지막 거래일 · 12월 결산 배당 기준일(많은 회사)", "big");
+  else if ([2, 5, 8].includes(m)) add(ld, "분기 마지막 거래일 · 분기 배당 기준일(일부 회사)", "mid");
+  else add(ld, "월말 마지막 거래일", "low");
+  // 실적 관련 (법정 마감일·대략적인 시기)
+  if ([0, 3, 6, 9].includes(m)) { let d = 7; while (!isOpen(y, m, d)) d++; add(d, "실적 시즌 시작 무렵 (삼성전자 등 잠정 실적, 대략)", "mid"); }
+  // 보고서 마감일이 쉬는 날이면 다음 평일로
+  const due = (d, t) => { while (d < last && !isOpen(y, m, d)) d++; add(d, t, "mid"); };
+  if (m === 2) due(31, "사업보고서(1년 실적) 제출 마감");
+  if (m === 4) due(15, "1분기 보고서 제출 마감");
+  if (m === 7) due(14, "반기 보고서 제출 마감");
+  if (m === 10) due(14, "3분기 보고서 제출 마감");
+  // 미국
+  const ym = isoOf(y, m, 1).slice(0, 8);
+  FOMC.filter((x) => x.startsWith(ym)).forEach((x) => add(+x.slice(8), "미국 금리 결정(FOMC) 발표 (새벽)", "big"));
+  let fr = 1;
+  while (new Date(y, m, fr).getDay() !== 5) fr++;
+  add(fr, "미국 고용 지표 발표 (밤 9시 반 무렵, 대략)", "low");
+  return ev;
+}
+let calYM = null;
+route(/^\/cal/, async () => {
+  const t = kstToday();
+  if (!calYM) calYM = [+t.slice(0, 4), +t.slice(5, 7) - 1];
+  const [y, m] = calYM;
+  const ev = monthEvents(y, m);
+  const first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
+  const dot = { big: "#e5484d", mid: "#f59e0b", low: "var(--muted)", off: "#3b82f6" };
+  let cells = "";
+  for (let i = 0; i < first; i++) cells += `<div></div>`;
+  for (let d = 1; d <= last; d++) {
+    const k = isoOf(y, m, d), e = ev[k] || [], w = (first + d - 1) % 7;
+    const off = w === 0 || w === 6 || HOLI[k];
+    cells += `<button class="cal-d${k === t ? " today" : ""}${off ? " off" : ""}" data-day="${k}"><span>${d}</span>
+      <i>${e.slice(0, 3).map((x) => `<b style="background:${dot[x.k]}"></b>`).join("")}</i></button>`;
+  }
+  const thisMonth = y === +t.slice(0, 4) && m === +t.slice(5, 7) - 1;
+  const list = Object.keys(ev).sort().filter((k) => !thisMonth || k >= t).map((k) =>
+    `<div class="row" id="ev-${k}"><div class="nm"><b>${dayTxt(k)}${k === t ? " · 오늘" : ""}</b>${ev[k].map((x) => `<small style="display:block"><span style="color:${dot[x.k]}">●</span> ${esc(x.t)}</small>`).join("")}</div></div>`).join("");
+  after(() => {
+    document.querySelectorAll("[data-mv]").forEach((b) => b.onclick = () => {
+      let [yy, mm] = calYM;
+      mm += +b.dataset.mv;
+      if (mm < 0) { mm = 11; yy--; }
+      if (mm > 11) { mm = 0; yy++; }
+      calYM = [yy, mm]; render();
+    });
+    document.querySelectorAll("[data-day]").forEach((b) => b.onclick = () => {
+      const el = document.getElementById("ev-" + b.dataset.day);
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200); }
+      else toast(`${dayTxt(b.dataset.day)}: ${HOLI[b.dataset.day] ? "휴장" : "특별한 일정 없음"}`);
+    });
+  });
+  return `
+  <div class="card"><h2 style="display:flex;align-items:center;justify-content:space-between">
+    <button class="icon-btn" data-mv="-1">‹</button><span>📅 ${y}년 ${m + 1}월 증시 일정</span><button class="icon-btn" data-mv="1">›</button></h2>
+    <div class="cal-w">${WD.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-g">${cells}</div>
+    <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:var(--muted)">●</span> 참고</p></div>
+  <div class="card"><h2>🗓️ ${m + 1}월 일정${thisMonth ? " (오늘부터)" : ""}</h2>${list || `<div class="muted small">남은 일정이 없어요.</div>`}
+    <p class="muted small">만기일·휴장일·보고서 마감일은 규칙으로 계산했고, '대략'이라고 적힌 건 보통 그 무렵이라는 뜻이에요. 휴장일은 거래소 공지로 바뀔 수 있어요. 종목별 실적 발표일은 종목 화면의 '실적 발표 일정'에서 볼 수 있어요.</p></div>
   ${foot()}`;
 }, "home");
 
@@ -715,8 +924,8 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   <div class="card"><div style="text-align:center;margin-bottom:6px">${segH()}</div>${probHtml}
     <p class="muted small" style="text-align:center">AI 기준일 ${esc(d.date)} 종가 · 매일 오후 5시 새로 계산</p>${sumHtml}
     <a class="more" href="#/cmp?${code}-" style="text-align:center">🆚 다른 종목과 비교하기</a></div>
-  <div class="card"><h2>📈 주가 <span class="seg">${[[60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
-    <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo">선 = 종가 · <span style="color:#f59e0b">주황</span> 20일 평균 · <span style="color:#8b5cf6">보라</span> 60일 평균 · 아래 막대 = 거래량</p></div>
+  <div class="card"><h2>📈 주가 <span class="seg">${[[20, "1개월"], [60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
+    <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo">봉 = 하루 가격 (<span class="up">빨강</span> 오른 날 · <span class="down">파랑</span> 내린 날, 가는 선은 최고·최저) · <span style="color:#f59e0b">주황</span> 20일 평균 · <span style="color:#8b5cf6">보라</span> 60일 평균 · 아래 막대 = 거래량</p></div>
   ${voteHtml}
   <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
   ${flHtml}${thHtml}${newsHtml}${finHtml}
@@ -734,7 +943,7 @@ async function share(name, code, P) {
   } catch { /* 취소 */ }
 }
 
-// 차트 (종가 선 + 20·60일 평균 + 거래량)
+// 차트 (봉 차트: 빨강 = 오른 날, 파랑 = 내린 날 + 20·60일 평균 + 거래량)
 function drawChart(cv, ch, n) {
   if (!cv || !ch || !ch.c.length) return;
   const css = getComputedStyle(document.documentElement);
@@ -742,19 +951,23 @@ function drawChart(cv, ch, n) {
   const ma = (k) => ch.c.map((_, i) => (i + 1 < k ? null : ch.c.slice(i + 1 - k, i + 1).reduce((a, b) => a + b, 0) / k));
   const m20 = ma(20), m60 = ma(60);
   const st = Math.max(0, ch.c.length - n);
-  const C = ch.c.slice(st), V = ch.v.slice(st), D = ch.d.slice(st), A = m20.slice(st), B = m60.slice(st);
+  const cut = (a) => (a || ch.c).slice(st);
+  const C = cut(ch.c), O = cut(ch.o), Hi = cut(ch.h), Lo = cut(ch.l), V = cut(ch.v), D = cut(ch.d), A = m20.slice(st), B = m60.slice(st);
   const dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth, Hh = 230;
+  const W = cv.clientWidth, Hh = 250;
   cv.width = W * dpr; cv.height = Hh * dpr; cv.style.height = Hh + "px";
   const g = cv.getContext("2d");
   g.scale(dpr, dpr);
   const pad = { l: 4, r: 56, t: 8, b: 18 }, vh = 40;
   const ph = Hh - pad.t - pad.b - vh - 6;
-  const all = C.concat(A.filter((x) => x != null), B.filter((x) => x != null));
+  const all = Hi.concat(Lo, A.filter((x) => x != null), B.filter((x) => x != null)).filter((x) => x != null);
   let lo = Math.min(...all), hi = Math.max(...all);
   if (hi === lo) { hi += 1; lo -= 1; }
-  const x = (i) => pad.l + (W - pad.l - pad.r) * (C.length === 1 ? 0.5 : i / (C.length - 1));
+  const step = (W - pad.l - pad.r) / C.length;
+  const x = (i) => pad.l + step * (i + 0.5);
   const y = (v) => pad.t + ph * (1 - (v - lo) / (hi - lo));
+  const bw = Math.max(1, Math.min(14, step * 0.7));
+  const upDay = (i) => C[i] > O[i] || (C[i] === O[i] && i > 0 && C[i] >= C[i - 1]);
   function frame(hover) {
     g.clearRect(0, 0, W, Hh);
     g.font = "11px sans-serif";
@@ -767,14 +980,22 @@ function drawChart(cv, ch, n) {
       g.fillText(Math.round(v).toLocaleString("ko-KR"), W - pad.r + 4, yy + 4);
     }
     const vmax = Math.max(...V) || 1, vb = Hh - pad.b;
-    const bw = Math.max(1, (W - pad.l - pad.r) / C.length - 1);
     V.forEach((v, i) => {
-      g.fillStyle = i && C[i] < C[i - 1] ? col("--down") : col("--up");
-      g.globalAlpha = 0.45;
+      g.fillStyle = upDay(i) ? col("--up") : col("--down");
+      g.globalAlpha = 0.4;
       const hgt = vh * v / vmax;
       g.fillRect(x(i) - bw / 2, vb - hgt, bw, hgt);
     });
     g.globalAlpha = 1;
+    // 봉: 가는 선 = 그날 최고~최저, 두꺼운 몸통 = 시작~마감 가격
+    C.forEach((c, i) => {
+      const o = O[i] ?? c, h = Hi[i] ?? Math.max(o, c), l = Lo[i] ?? Math.min(o, c);
+      const color = upDay(i) ? col("--up") : col("--down");
+      g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(Math.round(x(i)) + 0.5, y(h)); g.lineTo(Math.round(x(i)) + 0.5, y(l)); g.stroke();
+      const top = y(Math.max(o, c)), bot = y(Math.min(o, c));
+      g.fillRect(x(i) - bw / 2, top, bw, Math.max(1, bot - top));
+    });
     const line = (arr, color, w) => {
       g.strokeStyle = color; g.lineWidth = w; g.beginPath();
       let on = false;
@@ -783,7 +1004,6 @@ function drawChart(cv, ch, n) {
     };
     line(B, "#8b5cf6", 1.2);
     line(A, "#f59e0b", 1.2);
-    line(C, C[C.length - 1] >= C[0] ? col("--up") : col("--down"), 2);
     g.fillStyle = col("--muted");
     g.fillText(ymd(D[0]), pad.l, Hh - 4);
     const last = ymd(D[D.length - 1]);
@@ -791,7 +1011,6 @@ function drawChart(cv, ch, n) {
     if (hover != null) {
       g.strokeStyle = col("--fg"); g.lineWidth = 0.7; g.setLineDash([3, 3]);
       g.beginPath(); g.moveTo(x(hover), pad.t); g.lineTo(x(hover), Hh - pad.b); g.stroke(); g.setLineDash([]);
-      g.fillStyle = col("--fg"); g.beginPath(); g.arc(x(hover), y(C[hover]), 3.5, 0, 7); g.fill();
     }
   }
   frame(null);
@@ -799,14 +1018,13 @@ function drawChart(cv, ch, n) {
   const at = (e) => {
     const r = cv.getBoundingClientRect();
     const px = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
-    const i = Math.round((px - pad.l) / (W - pad.l - pad.r) * (C.length - 1));
-    return Math.max(0, Math.min(C.length - 1, i));
+    return Math.max(0, Math.min(C.length - 1, Math.floor((px - pad.l) / step)));
   };
   const show = (e) => {
     const i = at(e);
     frame(i);
     const ch1 = i ? (C[i] / C[i - 1] - 1) * 100 : null;
-    info.innerHTML = `<b>${ymd(D[i])}</b> 종가 ${won(C[i])}원 <span class="${cls(ch1)}">${pctTxt(ch1)}</span> · 거래량 ${won(V[i])}`;
+    info.innerHTML = `<b>${ymd(D[i])}</b> 종가 ${won(C[i])}원 <span class="${cls(ch1)}">${pctTxt(ch1)}</span><br>시작 ${won(O[i])} · 최고 ${won(Hi[i])} · 최저 ${won(Lo[i])} · 거래량 ${won(V[i])}`;
   };
   const hide = () => { frame(null); info.innerHTML = base; };
   cv.onmousemove = show; cv.onmouseleave = hide;

@@ -114,3 +114,11 @@ table.cmp .win{color:var(--up);font-weight:800}
 table.cmp .lose{color:var(--down)}
 a.more{display:block;color:inherit}
 select.num{appearance:auto}
+.cal-w,.cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.cal-w span{font-size:12px;color:var(--muted);padding:4px 0}
+.cal-w span:first-child,.cal-d.off span{color:var(--up)}
+.cal-d{background:var(--soft);border:1px solid transparent;border-radius:8px;padding:6px 0 4px;min-height:44px;display:flex;flex-direction:column;align-items:center;gap:3px;font:inherit;color:var(--fg);cursor:pointer}
+.cal-d.today{border-color:var(--accent);font-weight:700}
+.cal-d i{display:flex;gap:2px;height:6px}
+.cal-d i b{width:6px;height:6px;border-radius:50%}
+.row.flash{background:var(--soft);transition:background .3s}
