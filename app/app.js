@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.5.1";
+const VERSION = "2.5.2";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -662,9 +662,9 @@ route(/^\/cal/, async () => {
     cells += `<button class="cal-d${k === t ? " today" : ""}${off ? " off" : ""}" data-day="${k}"><span>${d}</span>
       <i>${e.slice(0, 3).map((x) => `<b style="background:${dot[x.k]}"></b>`).join("")}</i></button>`;
   }
-  const thisMonth = y === +t.slice(0, 4) && m === +t.slice(5, 7) - 1;
-  const list = Object.keys(ev).sort().filter((k) => !thisMonth || k >= t).map((k) =>
-    `<div class="row" id="ev-${k}"><div class="nm"><b>${dayTxt(k)}${k === t ? " · 오늘" : ""}</b>${ev[k].map((x) => `<small style="display:block"><span style="color:${dot[x.k]}">●</span> ${esc(x.t)}</small>`).join("")}</div></div>`).join("");
+  // 그달 일정 전부 (지난 날은 흐리게)
+  const list = Object.keys(ev).sort().map((k) =>
+    `<div class="row" id="ev-${k}"${k < t ? ' style="opacity:.55"' : ""}><div class="nm"><b>${dayTxt(k)}${k === t ? " · 오늘" : k < t ? " · 지남" : ""}</b>${ev[k].map((x) => `<small style="display:block"><span style="color:${dot[x.k]}">●</span> ${esc(x.t)}</small>`).join("")}</div></div>`).join("");
   after(() => {
     document.querySelectorAll("[data-mv]").forEach((b) => b.onclick = () => {
       let [yy, mm] = calYM;
@@ -684,7 +684,7 @@ route(/^\/cal/, async () => {
     <button class="icon-btn" data-mv="-1">‹</button><span>📅 ${y}년 ${m + 1}월 증시 일정</span><button class="icon-btn" data-mv="1">›</button></h2>
     <div class="cal-w">${WD.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-g">${cells}</div>
     <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:var(--muted)">●</span> 참고</p></div>
-  <div class="card"><h2>🗓️ ${m + 1}월 일정${thisMonth ? " (오늘부터)" : ""}</h2>${list || `<div class="muted small">남은 일정이 없어요.</div>`}
+  <div class="card"><h2>🗓️ ${m + 1}월 일정</h2>${list || `<div class="muted small">이달은 일정이 없어요.</div>`}
     <p class="muted small">만기일·휴장일·보고서 마감일은 규칙으로 계산했고, '대략'이라고 적힌 건 보통 그 무렵이라는 뜻이에요. 휴장일은 거래소 공지로 바뀔 수 있어요. 종목별 실적 발표일은 종목 화면의 '실적 발표 일정'에서 볼 수 있어요.</p></div>
   ${foot()}`;
 }, "home");
