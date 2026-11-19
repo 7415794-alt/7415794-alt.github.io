@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.5.3";
+const VERSION = "2.6.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -220,7 +220,7 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 // ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
 const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/screen", "🔎", "조건검색"],
   ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
-  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"]];
+  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
@@ -652,8 +652,25 @@ route(/^\/cal/, async () => {
   if (!calYM) calYM = [+t.slice(0, 4), +t.slice(5, 7) - 1];
   const [y, m] = calYM;
   const ev = monthEvents(y, m);
+  // 종목별 실적 발표: ⭐ 내 종목은 따로, 나머지는 날짜별로 묶어서
+  const ER = await erMap(), mine = new Set([...favs(), ...holds().map((h) => h[0])]);
+  if (ER) {
+    const ym = isoOf(y, m, 1).slice(0, 8), byDay = {};
+    Object.entries(ER).forEach(([c, v]) => {
+      if (!v[0].startsWith(ym)) return;
+      if (mine.has(c)) (ev[v[0]] = ev[v[0]] || []).push({ t: `⭐ ${v[3] || c} 실적 발표${v[1] === "예상" ? " (예상)" : ""}`, k: "er", c });
+      else (byDay[v[0]] = byDay[v[0]] || []).push([c, v]);
+    });
+    Object.entries(byDay).forEach(([day, arr]) => {
+      const fx = arr.filter((a) => a[1][1] === "확정").length;
+      arr.sort((a, b) => (a[1][1] === "확정" ? 0 : 1) - (b[1][1] === "확정" ? 0 : 1));
+      (ev[day] = ev[day] || []).push({ t: `실적 발표 ${arr.length}곳${fx ? ` (확정 ${fx})` : " (예상)"}`, k: "low",
+        h: ` <details style="display:inline"><summary style="display:inline;cursor:pointer;color:var(--accent)">보기</summary><span style="display:block;line-height:1.9">${arr.slice(0, 120).map(([c, v]) =>
+          `<a href="#/s/${c}">${v[1] === "확정" ? "<b>" + esc(v[3]) + "</b>" : esc(v[3])}</a>`).join(" · ")}${arr.length > 120 ? " …" : ""}</span></details>` });
+    });
+  }
   const first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
-  const dot = { big: "#e5484d", mid: "#f59e0b", low: "var(--muted)", off: "#3b82f6" };
+  const dot = { big: "#e5484d", mid: "#f59e0b", low: "var(--muted)", off: "#3b82f6", er: "#8b5cf6" };
   let cells = "";
   for (let i = 0; i < first; i++) cells += `<div></div>`;
   for (let d = 1; d <= last; d++) {
@@ -664,7 +681,7 @@ route(/^\/cal/, async () => {
   }
   // 그달 일정 전부 (지난 날은 흐리게)
   const list = Object.keys(ev).sort().map((k) =>
-    `<div class="row" id="ev-${k}"${k < t ? ' style="opacity:.55"' : ""}><div class="nm"><b>${dayTxt(k)}${k === t ? " · 오늘" : k < t ? " · 지남" : ""}</b>${ev[k].map((x) => `<small style="display:block"><span style="color:${dot[x.k]}">●</span> ${esc(x.t)}</small>`).join("")}</div></div>`).join("");
+    `<div class="row" id="ev-${k}"${k < t ? ' style="opacity:.55"' : ""}><div class="nm"><b>${dayTxt(k)}${k === t ? " · 오늘" : k < t ? " · 지남" : ""}</b>${ev[k].map((x) => `<small style="display:block"><span style="color:${dot[x.k]}">●</span> ${x.c ? `<a href="#/s/${x.c}">${esc(x.t)}</a>` : esc(x.t)}${x.h || ""}</small>`).join("")}</div></div>`).join("");
   after(() => {
     document.querySelectorAll("[data-mv]").forEach((b) => b.onclick = () => {
       let [yy, mm] = calYM;
@@ -683,9 +700,9 @@ route(/^\/cal/, async () => {
   <div class="card"><h2 style="display:flex;align-items:center;justify-content:space-between">
     <button class="icon-btn" data-mv="-1">‹</button><span>📅 ${y}년 ${m + 1}월 증시 일정</span><button class="icon-btn" data-mv="1">›</button></h2>
     <div class="cal-w">${WD.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-g">${cells}</div>
-    <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:var(--muted)">●</span> 참고</p></div>
+    <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:${dot.er}">●</span> 내 종목 실적 · <span style="color:var(--muted)">●</span> 참고</p></div>
   <div class="card"><h2>🗓️ ${m + 1}월 일정</h2>${list || `<div class="muted small">이달은 일정이 없어요.</div>`}
-    <p class="muted small">만기일·휴장일·보고서 마감일은 규칙으로 계산했고, '대략'이라고 적힌 건 보통 그 무렵이라는 뜻이에요. 휴장일은 거래소 공지로 바뀔 수 있어요. 종목별 실적 발표일은 종목 화면의 '실적 발표 일정'에서 볼 수 있어요.</p></div>
+    <p class="muted small">만기일·휴장일·보고서 마감일은 규칙으로 계산했고, '대략'이라고 적힌 건 보통 그 무렵이라는 뜻이에요. 휴장일은 거래소 공지로 바뀔 수 있어요. 종목별 실적 발표일은 회사가 알린 날짜(확정, 굵게)를 쓰고, 없으면 작년 이맘때 공시 날짜로 짐작한 '예상'이에요. ⭐ = 내 종목.</p></div>
   ${foot()}`;
 }, "home");
 
@@ -883,7 +900,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   const finHtml = `<div class="card"><h2>🏢 기업 정보</h2>${infoHtml}${finGrid}
     <p class="small" style="margin:12px 0 4px"><b>🎯 증권사 목표주가</b></p>${consHtml}
     <p class="small" style="margin:12px 0 4px"><b>🧑‍🤝‍🧑 외국인·기관 매매</b></p>${dealHtml}
-    <p class="small" style="margin:12px 0 4px"><b>📅 실적 발표 일정</b></p>${irHtml}
+    <p class="small" style="margin:12px 0 4px"><b>📅 실적 발표 일정</b></p><div id="irbox">${irHtml}</div>
     <p class="muted small">네이버 증권 자료(매일 오후 5시 기준). 적자 기업은 PER이 '-'로 나와요. AI 확률 계산에는 쓰지 않는 참고 정보예요.</p></div>`;
 
   after(() => {
@@ -902,6 +919,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
       redraw();
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
+    dartSection(code, !!d.ir);
     document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = () => {
       addVote(code, d.name, H, pr.now, b.dataset.vote, Math.round(P.p * 100));
       toast("찍었어요! 기간이 지나면 내 종목 화면에서 채점해요");
@@ -935,7 +953,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo"></p></div>
   ${voteHtml}
   <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
-  ${flHtml}${thHtml}${newsHtml}${finHtml}
+  ${flHtml}${thHtml}${newsHtml}<div id="dartbox"></div>${finHtml}
   <div class="card"><details id="indbox"><summary>🧮 AI가 본 지표 50가지</summary><div id="indt" class="loading">불러오는 중…</div></details></div>
   ${foot()}`;
 }, "home");
@@ -1143,6 +1161,198 @@ route(/^\/rank(?:\?(\w+))?/, async (by) => {
     · AI 기준일 ${esc(META?.date || "-")}. 높은 순서일 뿐 실제로 오르거나 내린다는 보장은 없어요.</p></div>${sc}${foot()}`;
 }, "rank");
 
+// ───────── 🏛️ 전자공시 자료: 실적 한눈에 · 최근 공시 · 임원·대주주 · 배당 · 실적 발표 일정 ─────────
+const eok = (v) => (v == null ? "-" : Math.abs(v) >= 10000 ? (v / 10000).toFixed(1) + "조" : Math.round(v).toLocaleString("ko-KR") + "억");
+const amtTxt = (v) => (v == null ? "" : Math.abs(v) < 0.0001 ? "1만원 미만" : Math.abs(v) < 1 ? `약 ${Math.round(Math.abs(v) * 10000).toLocaleString("ko-KR")}만원` : `약 ${eok(Math.abs(v))}원`);
+const DART = (p) => getJSON(DATA + p, 3600000);
+const ddays = (iso) => Math.round((new Date(iso) - new Date(todayKST())) / 864e5);
+
+// 분기 막대 (0 기준선, 위 = 흑자, 아래 = 적자)
+function drawQ(cv, labels, vals, opt = {}) {
+  if (!cv || !labels.length) return;
+  const css = getComputedStyle(document.documentElement);
+  const col = (v) => (v.startsWith("--") ? css.getPropertyValue(v).trim() : v);
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = opt.h || 140;
+  cv.width = W * dpr; cv.height = Hh * dpr; cv.style.height = Hh + "px";
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  const pad = { l: 2, r: 2, t: 16, b: 18 }, ph = Hh - pad.t - pad.b;
+  const vs = vals.filter((v) => v != null);
+  const hi = Math.max(0, ...vs), lo = Math.min(0, ...vs), span = hi - lo || 1;
+  const step = (W - pad.l - pad.r) / labels.length, bw = Math.max(4, Math.min(26, step * 0.6));
+  const y = (v) => pad.t + ph * (1 - (v - lo) / span);
+  g.font = "10px sans-serif"; g.textAlign = "center";
+  g.strokeStyle = col("--line"); g.beginPath(); g.moveTo(pad.l, y(0)); g.lineTo(W - pad.r, y(0)); g.stroke();
+  vals.forEach((v, i) => {
+    const x = pad.l + step * (i + 0.5);
+    g.fillStyle = col("--muted"); g.fillText(labels[i], x, Hh - 4);
+    if (v == null) return;
+    g.fillStyle = col(v >= 0 ? (opt.color || "--up") : "--down");
+    const a = y(Math.max(0, v)), b = y(Math.min(0, v));
+    g.fillRect(x - bw / 2, a, bw, Math.max(1, b - a));
+    g.fillStyle = col("--fg"); g.fillText(eok(v), x, v >= 0 ? a - 3 : Math.min(b + 11, Hh - 16));
+  });
+}
+
+// 🟢🟡🔴 재무 신호등
+function finLights(q) {
+  const L = [], rows = q.q || [];
+  const last4 = rows.slice(-4).filter((r) => r[2] != null);
+  if (last4.length) {
+    const neg = last4.filter((r) => r[2] < 0).length;
+    L.push([neg === 0 ? "🟢" : neg === 1 ? "🟡" : "🔴", "영업이익", neg === 0 ? `최근 ${last4.length}분기 모두 흑자` : `최근 ${last4.length}분기 중 ${neg}번 적자`]);
+  }
+  const cur = rows[rows.length - 1], prev = rows.length >= 5 ? rows[rows.length - 5] : null;
+  if (cur && prev && cur[1] != null && prev[1]) {
+    const g = cur[1] / prev[1] - 1;
+    L.push([g > 0.05 ? "🟢" : g > -0.05 ? "🟡" : "🔴", `매출 (${cur[0]}, 1년 전보다)`, pctTxt(g * 100, 1)]);
+  }
+  if (cur && prev && cur[2] != null && prev[2] != null) {
+    if (prev[2] <= 0 && cur[2] > 0) L.push(["🟢", `영업이익 (${cur[0]})`, "흑자로 돌아섬"]);
+    else if (prev[2] > 0 && cur[2] <= 0) L.push(["🔴", `영업이익 (${cur[0]})`, "적자로 돌아섬"]);
+    else if (prev[2] > 0) { const g = cur[2] / prev[2] - 1; L.push([g > 0.05 ? "🟢" : g > -0.05 ? "🟡" : "🔴", `영업이익 (${cur[0]}, 1년 전보다)`, pctTxt(g * 100, 1)]); }
+    else L.push(["🔴", `영업이익 (${cur[0]})`, "적자 이어짐"]);
+  }
+  if (q.debt != null) L.push([q.debt < 100 ? "🟢" : q.debt < 200 ? "🟡" : "🔴", "부채비율", `${q.debt.toLocaleString("ko-KR")}%`]);
+  return L;
+}
+
+const insRow = (r, link) => {
+  const [date, who, role, chg, aft, rate, amt] = r.slice(-8);
+  const head = link ? `${esc(link[1])} <small class="muted">${esc(who)}${role ? " · " + esc(role) : ""}</small>` : `${esc(who)} <small class="muted">${esc(role || "")}</small>`;
+  return `<${link ? `a class="row" href="#/s/${link[0]}"` : `div class="row"`}><div class="nm"><b>${head}</b>
+    <small>${date.slice(2).replace(/-/g, ".")} · 보유 ${aft != null ? won(aft) + "주" : "-"}${rate ? ` (${rate}%)` : ""}</small></div>
+    <div class="rt"><b class="${cls(chg)}">${chg > 0 ? "+" : ""}${won(chg)}주</b><br><small class="muted">${amtTxt(amt)}</small></div></${link ? "a" : "div"}>`;
+};
+const INS_NOTE = "늘어난 주식에는 직접 산 것 말고 상여·스톡옵션·상속으로 받은 것도 섞여 있어요. 금액은 지금 가격으로 대략 계산했어요.";
+
+async function dartSection(code, hasIr) {
+  const box = $("#dartbox");
+  if (!box) return;
+  let x;
+  try { x = await DART(`d/${code}.json`); } catch { box.innerHTML = ""; return; }
+  if (!document.body.contains(box)) return;
+  let h = "";
+  const Q = x.q && x.q.q && x.q.q.length ? x.q.q : null;
+  if (Q) {
+    h += `<div class="card"><h2>📊 실적 한눈에 <small>분기별</small></h2>
+      <div class="fin">${finLights(x.q).map(([e, k, v]) => `<div class="stat"><small>${e} ${esc(k)}</small><b style="font-size:15px">${esc(v)}</b></div>`).join("")}</div>
+      <p class="small" style="margin:12px 0 2px"><b>매출액</b></p><canvas id="q-s"></canvas>
+      <p class="small" style="margin:12px 0 2px"><b>영업이익</b> <small class="muted">빨강 흑자 · 파랑 적자</small></p><canvas id="q-o"></canvas>
+      <p class="muted small">전자공시(DART) 분기·반기·사업보고서 기준(연결 재무제표 우선). 4분기는 1년 실적에서 앞 세 분기를 빼서 계산했어요. 🟢 좋음 · 🟡 보통 · 🔴 주의</p></div>`;
+  }
+  if (x.div) {
+    const v = x.div, ys = [v.year - 2, v.year - 1, v.year];
+    h += `<div class="card"><h2>💰 배당 <small>${v.year}년 결산 기준</small></h2><div class="split">
+      <div class="stat"><small>1주당 배당금</small><b>${won(v.dps[2])}원</b><div class="small muted">1년 동안 받은 현금</div></div>
+      <div class="stat"><small>배당수익률</small><b>${v.yld != null ? v.yld.toFixed(2) + "%" : v.yld_rep != null ? v.yld_rep.toFixed(2) + "%" : "-"}</b><div class="small muted">${v.yld != null ? "지금 가격으로 샀다면" : "결산 당시 회사 보고"}</div></div>
+      <div class="stat"><small>배당성향</small><b>${v.payout != null ? Math.round(v.payout) + "%" : "-"}</b><div class="small muted">순이익 중 배당 비율</div></div></div>
+      <p class="small" style="margin:8px 0 0">최근 3년 1주당 배당금: ${ys.map((y, i) => `${y}년 <b>${v.dps[i] != null ? won(v.dps[i]) + "원" : "-"}</b>`).join(" → ")}</p>
+      ${v.odd ? `<p class="small" style="margin:6px 0 0">⚠️ 그 뒤 주식 수가 바뀌었거나(분할 등) 자료가 맞지 않아, 지금 가격 기준 수익률은 계산하지 않았어요.</p>` : ""}
+      <p class="muted small">사업보고서 기준이라 올해 배당은 달라질 수 있어요. <a href="#/div">💰 배당 순위 보기 ›</a></p></div>`;
+  }
+  if (x.ins && x.ins.length) {
+    const up = x.ins.filter((r) => r[3] > 0).length, dn = x.ins.filter((r) => r[3] < 0).length;
+    h += `<div class="card"><h2>👔 임원·대주주 주식 변동 <small>최근 6개월 · 늘림 ${up} · 줄임 ${dn}</small></h2>
+      ${x.ins.slice(0, 6).map((r) => insRow(r)).join("")}
+      ${x.ins.length > 6 ? `<details><summary>${x.ins.length - 6}건 더 보기</summary>${x.ins.slice(6).map((r) => insRow(r)).join("")}</details>` : ""}
+      <p class="muted small">${INS_NOTE} <a href="#/ins">👔 전체 종목 보기 ›</a></p></div>`;
+  }
+  if (x.disc && x.disc.length) {
+    const row = ([date, label, desc, tone, title, rno]) => `<a class="row" href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(rno)}" target="_blank" rel="noopener">
+      <div class="nm"><b>${tone > 0 ? "🟢 " : tone < 0 ? "🟠 " : ""}${esc(label)}</b><small>${date.slice(2).replace(/-/g, ".")} · ${esc(desc)}</small></div><div class="rt muted">›</div></a>`;
+    h += `<div class="card"><h2>📰 최근 공시 <small>쉬운 설명</small></h2>
+      ${x.disc.slice(0, 6).map(row).join("")}
+      ${x.disc.length > 6 ? `<details><summary>${x.disc.length - 6}건 더 보기</summary>${x.disc.slice(6).map(row).join("")}</details>` : ""}
+      <p class="muted small">누르면 전자공시(DART) 원문이 열려요. 🟢 보통 좋은 소식 · 🟠 주의할 소식 (주가가 꼭 그렇게 움직이는 건 아니에요)</p></div>`;
+  }
+  box.innerHTML = h;
+  if (Q) {
+    const lb = Q.map((r) => r[0]);
+    drawQ($("#q-s"), lb, Q.map((r) => r[1]), { color: "#8b9bb4" });
+    drawQ($("#q-o"), lb, Q.map((r) => r[2]));
+  }
+  const ib = $("#irbox");
+  if (!hasIr && x.er && ib) {
+    const dd = ddays(x.er[0]);
+    ib.innerHTML = `<p class="small">📢 다음 실적 발표 <b>${esc(x.er[0])}</b>${x.er[1] === "예상" ? " 무렵 (예상)" : ""} · ${dd === 0 ? "오늘" : "D-" + dd}<br><small class="muted">${esc(x.er[2])}</small></p>`;
+  }
+}
+
+// ───────── 💰 배당 순위 ─────────
+let divState = Object.assign({ by: "yld", safe: true }, store.get("ss-div", {})), divShow = 50;
+route(/^\/div/, async () => {
+  await loadIndex();
+  let D;
+  try { D = await DART("div.json"); } catch { return `<div class="card"><h2>💰 배당 순위</h2><p class="muted">배당 자료를 준비하고 있어요. 잠시 뒤 다시 와 주세요.</p></div>${foot()}`; }
+  let list = D.rows.map(([code, name, dps, yld, year, payout, up]) => ({ code, name, dps, yld, year, payout, up, s: BYCODE.get(code) }))
+    .filter((r) => r.s && !r.s.halted && !(r.yld > 50));
+  if (divState.safe) list = list.filter((r) => !r.s.managed && !r.s.alert);
+  const k = divState.by === "dps" ? "dps" : "yld";
+  list.sort((a, b) => (b[k] ?? -1) - (a[k] ?? -1));
+  after(() => {
+    document.querySelectorAll("[data-dv]").forEach((b) => b.onclick = () => { divState.by = b.dataset.dv; store.set("ss-div", divState); divShow = 50; render(); });
+    $("#dsafe").onchange = (e) => { divState.safe = e.target.checked; store.set("ss-div", divState); render(); };
+    const m = $("#dvmore"); if (m) m.onclick = () => { divShow += 50; render(); };
+  });
+  const rows = list.slice(0, divShow).map((r, i) => `<a class="row" href="#/s/${r.code}"><div class="nm"><b>${i + 1}. ${esc(r.name)}</b>
+    <small>${k === "yld" ? `1주당 ${won(r.dps)}원` : `배당수익률 ${r.yld != null ? r.yld.toFixed(2) + "%" : "-"}`} · ${r.year}년 결산${r.payout != null ? ` · 배당성향 ${Math.round(r.payout)}%` : ""}${r.up >= 2 ? " · 📈 2년 연속 늘림" : ""}${r.payout != null && r.payout < 0 ? " · ⚠️ 적자인데 배당" : r.payout > 100 ? " · ⚠️ 번 돈보다 많이 줌" : ""}</small></div>
+    <div class="rt"><b>${k === "yld" ? (r.yld != null ? r.yld.toFixed(2) + "%" : "-") : won(r.dps) + "원"}</b><br><small class="muted">${k === "yld" ? "배당수익률" : "1주당"}</small></div></a>`).join("");
+  return `<div class="toolbar"><div class="seg">${[["yld", "💹 배당수익률 순"], ["dps", "💵 배당금 순"]].map(([v, l]) => `<button data-dv="${v}" class="${v === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <label class="ck"><input type="checkbox" id="dsafe" ${divState.safe ? "checked" : ""}> 관리·주의 종목 빼기</label></div>
+  <div class="card"><h2>💰 ${k === "yld" ? "배당수익률" : "1주당 배당금"} 높은 순 <small>${list.length.toLocaleString("ko-KR")}종목</small></h2>${rows}
+    ${list.length > divShow ? `<button class="more" id="dvmore">50개 더 보기</button>` : ""}
+    <p class="muted small">배당수익률 = 1주당 배당금 ÷ 지금 주가 (${esc(D.date)} 종가 기준). 배당금은 가장 최근 사업보고서(1년 결산, 보통주) 기준이라 올해는 달라질 수 있어요.
+    배당수익률이 유난히 높으면 주가가 크게 떨어졌거나 한 번만 준 특별 배당일 수 있어요. 1주당 배당금은 주가 수준이 회사마다 달라서 금액끼리 단순 비교는 어려워요.</p></div>${foot()}`;
+}, "rank");
+
+// ───────── 👔 임원·대주주 주식 변동 ─────────
+let insState = Object.assign({ by: "buy", small: true }, store.get("ss-ins", {})), insShow = 50;
+route(/^\/ins/, async () => {
+  await loadIndex();
+  let D;
+  try { D = await DART("ins.json"); } catch { return `<div class="card"><h2>👔 임원·대주주 주식 변동</h2><p class="muted">자료를 준비하고 있어요. 잠시 뒤 다시 와 주세요.</p></div>${foot()}`; }
+  let list = D.rows.filter((r) => BYCODE.has(r[0]));
+  if (insState.small) list = list.filter((r) => r[8] == null || Math.abs(r[8]) >= 0.1);
+  if (insState.by === "buy") list = list.filter((r) => r[5] > 0);
+  else if (insState.by === "sell") list = list.filter((r) => r[5] < 0);
+  else list = [...list].sort((a, b) => Math.abs(b[8] || 0) - Math.abs(a[8] || 0));
+  after(() => {
+    document.querySelectorAll("[data-iv]").forEach((b) => b.onclick = () => { insState.by = b.dataset.iv; store.set("ss-ins", insState); insShow = 50; render(); });
+    $("#ismall").onchange = (e) => { insState.small = e.target.checked; store.set("ss-ins", insState); render(); };
+    const m = $("#ivmore"); if (m) m.onclick = () => { insShow += 50; render(); };
+  });
+  return `<div class="toolbar"><div class="seg">${[["buy", "🔺 늘린 것"], ["sell", "🔻 줄인 것"], ["big", "💰 금액 큰 순"]].map(([v, l]) => `<button data-iv="${v}" class="${v === insState.by ? "on" : ""}">${l}</button>`).join("")}</div>
+    <label class="ck"><input type="checkbox" id="ismall" ${insState.small ? "checked" : ""}> 1천만 원 미만 빼기</label></div>
+  <div class="card"><h2>👔 임원·대주주 주식 변동 <small>최근 60일 · ${list.length.toLocaleString("ko-KR")}건</small></h2>
+    ${list.slice(0, insShow).map((r) => insRow(r, r)).join("") || `<div class="muted small">해당하는 기록이 없어요.</div>`}
+    ${list.length > insShow ? `<button class="more" id="ivmore">50개 더 보기</button>` : ""}
+    <p class="muted small">회사 임원과 대주주(10% 이상 등)가 자기 회사 주식 수가 바뀌면 5일 안에 내는 보고(전자공시) 기준이에요. ${INS_NOTE} 회사 사정을 잘 아는 사람의 움직임이라 참고하는 사람이 많지만, 주가 방향을 보장하지는 않아요.</p></div>${foot()}`;
+}, "rank");
+
+// 실적 발표 일정 (달력·내 종목용): code → [날짜, 확정|예상, 설명, 이름]
+async function erMap() {
+  let m;
+  try { m = await DART("ercal.json"); } catch { return null; }
+  // 예상일이 주말·휴장일이면 다음 거래일로
+  Object.values(m).forEach((v) => {
+    const d = new Date(v[0] + "T00:00:00");
+    for (let k = 0; k < 7 && !isOpen(d.getFullYear(), d.getMonth(), d.getDate()); k++) d.setDate(d.getDate() + 1);
+    v[0] = isoOf(d.getFullYear(), d.getMonth(), d.getDate());
+  });
+  return m;
+}
+function myErHtml(ER, codes) {
+  if (!ER) return "";
+  const up = [...new Set(codes)].map((c) => [c, ER[c]]).filter(([, v]) => v && ddays(v[0]) >= 0 && ddays(v[0]) <= 30)
+    .sort((a, b) => a[1][0].localeCompare(b[1][0]));
+  if (!up.length) return "";
+  return `<div class="card"><h2>📅 다가오는 실적 발표 <small>내 종목 · 30일 안</small></h2>
+    ${up.map(([c, v]) => `<a class="row" href="#/s/${c}"><div class="nm"><b>${esc(v[3] || c)}</b><small>${dayTxt(v[0])} ${v[1] === "예상" ? "무렵 (작년 기준 예상)" : "(회사 발표)"}</small></div>
+      <div class="rt"><b>${ddays(v[0]) === 0 ? "오늘" : "D-" + ddays(v[0])}</b></div></a>`).join("")}
+    <p class="muted small">실적 발표 즈음엔 주가가 크게 움직일 수 있어요. <a href="#/cal">📅 달력에서 보기 ›</a></p></div>`;
+}
+
 // ───────── 🧩 테마 ─────────
 let themeQ = "";
 route(/^\/themes/, async () => {
@@ -1283,8 +1493,9 @@ route(/^\/my/, async () => {
       toast(`✅ ${s.name}을(를) 추가했어요`); render();
     };
   });
+  const myEr = myErHtml(await erMap(), [...favs(), ...hs.map((x) => x[0])]);
   return `<div class="toolbar">${segH()}<span class="muted small">${esc(marketState())} ${esc(liveLabel())}</span></div>
-  <div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
+  ${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
   ${holdHtml}
   <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
   <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 서버로 보내지 않아요.</p>${foot()}`;
