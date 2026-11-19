@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.8.0";
+const VERSION = "2.9.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -123,6 +123,7 @@ function toggleFav(c) {
   const i = f.indexOf(c);
   if (i >= 0) f.splice(i, 1); else f.unshift(c);
   store.set("ss-fav", f);
+  pushSync();
   toast(i >= 0 ? "내 종목에서 뺐어요" : "⭐ 내 종목에 담았어요");
   return i < 0;
 }
@@ -1595,13 +1596,14 @@ route(/^\/my/, async () => {
       toast(`✅ ${s.name}을(를) 추가했어요`); render();
     };
   });
-  const [ERm, al] = await Promise.all([erMap(), myAlerts().catch(() => [])]);
+  const [ERm, al, pc] = await Promise.all([erMap(), myAlerts().catch(() => []), pushCard().catch(() => "")]);
   const myEr = myErHtml(ERm, [...favs(), ...hs.map((x) => x[0])]);
   return `<div class="toolbar">${segH()}<span class="muted small">${esc(marketState())} ${esc(liveLabel())}</span></div>
   ${alertHtml(al, 30)}${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
   ${holdHtml}
   <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
-  <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 서버로 보내지 않아요.</p>${foot()}`;
+  ${pc}
+  <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 휴대폰 알림을 켜면 종목 코드만 알림 서버로 보내요.</p>${foot()}`;
 }, "my");
 
 // ───────── 🕰️ 닮은꼴 차트 ─────────
@@ -1770,6 +1772,68 @@ const alertHtml = (al, n) => !al.length ? "" : `<div class="card"><h2>🔔 내 �
   ${al.slice(0, n).map(([, c, nm, t]) => `<a class="row" href="#/s/${c}" style="padding:6px 0"><div class="nm"><b>${esc(nm)}</b><small>${t}</small></div></a>`).join("")}
   ${al.length > n ? `<a class="more" href="#/my">알림 ${al.length - n}개 더 보기 ›</a>` : ""}
   <p class="muted small">관심·산 종목의 급등락(±5%), AI 확률 큰 변화(8%p 이상), 최근 공시, 실적 발표, 물량 경고를 모았어요. 앱을 열 때마다 새로 확인해요.</p></div>`;
+
+// ───────── 🔔 휴대폰 알림 (구독 주소와 관심 종목 코드만 알림 서버에 보냄) ─────────
+const PUSH_URL = "https://stocksignals-push.7415794.workers.dev";
+const VAPID = "BE4j44JuHrJKfDVxmiW-Ky3pSElkR520_F1F74B9cimfCFHO79M0gtjgl8r62FZbWIybGk_yQtq2NTnmc0dkS1I";
+const PUSH_KINDS = [["move", "🚀 장중 급등락", "내 종목이 ±5% 넘게 움직이면 (장중 20분마다 확인)"],
+  ["daily", "📋 장 마감 정리", "AI 확률 큰 변화·새 공시·내일 실적 발표 (오후 5시 계산 뒤)"],
+  ["issue", "🔥 오늘 이슈", "내 종목이 들어간 새 시장 이슈가 뜨면"]];
+const pushOK = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushKinds = () => store.get("ss-push-kinds", PUSH_KINDS.map((k) => k[0]));
+const b64u = (s) => { const b = atob((s + "===".slice((s.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
+async function pushSub() { try { return await (await navigator.serviceWorker.ready).pushManager.getSubscription(); } catch { return null; } }
+async function pushSync(force) {
+  if (!pushOK()) return false;
+  const s = await pushSub();
+  if (!s) return false;
+  const codes = [...new Set([...favs(), ...holds().map((x) => x[0])])];
+  const sig = JSON.stringify([codes, pushKinds(), s.endpoint.slice(-20), todayKST().slice(0, 7)]);
+  if (!force && store.get("ss-push-sig", "") === sig) return true;
+  try {
+    const r = await fetch(PUSH_URL + "/sub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sub: s.toJSON(), codes, kinds: pushKinds() }) });
+    if (r.ok) store.set("ss-push-sig", sig);
+    return r.ok;
+  } catch { return false; }
+}
+async function pushOn() {
+  if (!pushOK()) { toast("이 기기·브라우저는 알림을 지원하지 않아요"); return false; }
+  const p = await Notification.requestPermission();
+  if (p !== "granted") { toast("알림이 허용되지 않았어요. 휴대폰 설정에서 이 앱의 알림을 켜 주세요"); return false; }
+  const reg = await navigator.serviceWorker.ready;
+  let s = await reg.pushManager.getSubscription();
+  if (!s) s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID) });
+  const ok = await pushSync(true);
+  toast(ok ? "🔔 알림을 켰어요" : "알림 서버에 연결하지 못했어요. 잠시 뒤 다시 해 주세요");
+  return ok;
+}
+async function pushOff() {
+  const s = await pushSub();
+  if (s) {
+    try { await fetch(PUSH_URL + "/unsub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: s.endpoint }) }); } catch { /* 서버에서는 90일 뒤 자동 삭제 */ }
+    await s.unsubscribe();
+  }
+  store.set("ss-push-sig", "");
+  toast("알림을 껐어요");
+}
+async function pushCard() {
+  if (!pushOK()) return `<div class="card"><h2>🔔 휴대폰 알림</h2><p class="muted small" style="margin:0">이 기기·브라우저에서는 알림을 받을 수 없어요. 안드로이드 크롬이나 앱 최신 버전에서 켤 수 있어요.</p></div>`;
+  const on = !!(await pushSub()) && Notification.permission === "granted";
+  if (on) pushSync();
+  const ks = pushKinds();
+  after(() => {
+    $("#pushbtn").onclick = async () => { on ? await pushOff() : await pushOn(); render(); };
+    document.querySelectorAll("[data-pk]").forEach((c) => c.onchange = () => {
+      const v = PUSH_KINDS.map((k) => k[0]).filter((k) => document.querySelector(`[data-pk="${k}"]`).checked);
+      store.set("ss-push-kinds", v); pushSync(true);
+    });
+  });
+  return `<div class="card"><h2>🔔 휴대폰 알림 <small>${on ? "켜짐" : "꺼짐"}</small></h2>
+    ${on ? PUSH_KINDS.map(([k, t, d]) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-pk="${k}" ${ks.includes(k) ? "checked" : ""}><span><b>${t}</b><br><span class="muted">${d}</span></span></label>`).join("")
+      : `<p class="small" style="margin:0 0 6px">관심 종목·산 종목이 크게 움직이거나 새 공시가 나오면 앱을 열지 않아도 알려 드려요.</p>`}
+    <button class="more" id="pushbtn">${on ? "알림 끄기" : "🔔 알림 켜기"}</button>
+    <p class="muted small">알림을 보내려고 이 휴대폰의 알림 주소와 내 종목 코드만 알림 서버(Cloudflare)에 저장해요. 이름·산 가격·수량은 보내지 않아요. 90일 동안 앱을 열지 않으면 자동으로 지워져요.</p></div>`;
+}
 
 // ───────── 🧮 물타기·손익 계산기 (모두 이 휴대폰에서만 계산) ─────────
 const CALC0 = { avg: "", qty: "", now: "", add: "", addq: "", goal: "", fee: 0.015, tax: 0.2 };
