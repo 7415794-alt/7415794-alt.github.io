@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.6.0";
+const VERSION = "2.7.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -218,7 +218,7 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
   <a href="/disclaimer.html">면책 고지</a> · <a href="/privacy.html">개인정보처리방침</a> · 문의 <a href="mailto:slakeknowledge@gmail.com">slakeknowledge@gmail.com</a> · v${VERSION}</p>`;
 
 // ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
-const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/screen", "🔎", "조건검색"],
+const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/issues", "🔥", "오늘 이슈"], ["#/screen", "🔎", "조건검색"],
   ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
   ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
@@ -719,13 +719,13 @@ route(/^\/$/, async () => {
   const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !s.halted);
   const top = [...ok].sort((a, b) => b["p" + H] - a["p" + H]).slice(0, 10);
   const rec = store.get("ss-recent", []).map((c) => BYCODE.get(c)).filter(Boolean).slice(0, 5);
-  const sc = await scorecardHtml(true);
+  const [sc, ih] = await Promise.all([scorecardHtml(true), issueHome()]);
   return `
   ${catBar()}
   <a class="card" href="#/brief" style="display:block"><h2 style="margin:0">☀️ 아침 브리핑 <small>›</small></h2>
     <p class="small muted" style="margin:4px 0 0">어젯밤 미국 증시 · 코스피 확률 · 오늘 일정 · 어제 AI 성적을 한 화면에</p></a>
   <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div>${idxNote(ij)}</a>
-  ${sc}
+  ${ih}${sc}
   <div class="toolbar">${segH()}<span class="muted small">AI 기준일 ${esc(META?.date || "-")}</span></div>
   <div class="card"><h2>⭐ 관심 종목 <a class="small muted" href="#/my">전체 ›</a></h2>${favList(5)}</div>
   <div class="card"><h2>🔥 ${H}일 뒤 상승 확률 TOP 10 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>
@@ -1353,6 +1353,74 @@ function myErHtml(ER, codes) {
     <p class="muted small">실적 발표 즈음엔 주가가 크게 움직일 수 있어요. <a href="#/cal">📅 달력에서 보기 ›</a></p></div>`;
 }
 
+// ───────── 🔥 오늘 이슈 (장중 20분마다 새로 고침) ─────────
+const ISSUES = QS.get("issues") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/issues.json";
+async function loadIssues(force) {
+  if (force) memo.delete(ISSUES);
+  try { return await getJSON(ISSUES, 240000); } catch { return null; }
+}
+const issueChg = (s) => { const l = live(s[0]); return l && l[1] != null && LIVEJ && LIVEJ.t >= (ISS_T || "") ? l[1] : s[2]; };
+let ISS_T = "";
+function issueCard(x, full) {
+  const st = x.state === "on" ? (x.dir > 0 ? `<span class="tag p">🔺 강세</span>` : `<span class="tag n">🔻 약세</span>`)
+    : x.state === "wait" ? `<span class="tag z">⏳ 반응 확인 중</span>` : `<span class="tag z">🕗 장 전 뉴스</span>`;
+  const title = x.named === false ? `${x.kw} 테마` : x.kw;
+  const info = x.state === "on"
+    ? `테마 종목 가운데값 <b class="${cls(x.med)}">${pctTxt(x.med, 1)}</b> · 시장보다 ${x.rel > 0 ? "+" : ""}${(x.rel ?? 0).toFixed(1)}%p · 같이 움직인 종목 ${x.nm}/${x.n}곳`
+    : x.state === "wait" ? `장이 열렸지만 아직 반응이 약해요. 9시 40분까지 움직임이 없으면 내려요.`
+      : `밤사이 뉴스 ${x.nh || 0}건${x.hint > 0 ? " · 호재 쪽" : x.hint < 0 ? " · 악재 쪽" : ""} · 장이 열리면 실제로 움직이는지 확인해요.`;
+  const since = x.state === "on" ? `${esc(x.since)}부터${x.from_pre ? " · 장 전에 미리 알린 이슈" : ""}` : `${esc(x.since)} 올림`;
+  const ths = `<p class="small muted" style="margin:8px 0 2px">🧩 테마</p><div class="chips">${x.themes.slice(0, full ? 8 : 4).map(([no, nm, med]) =>
+    `<a class="chip" href="#/t/${no}">${esc(nm)}${med != null ? ` <span class="${cls(med)}">${pctTxt(med, 1)}</span>` : ""}</a>`).join("")}</div>`;
+  const sts = `<p class="small muted" style="margin:8px 0 2px">${x.state === "on" ? "📈 많이 움직인 종목" : "📈 관련 종목"}</p><div class="chips">${x.stocks.slice(0, full ? 8 : 5).map((s) => {
+    const c = issueChg(s);
+    return `<a class="chip" href="#/s/${s[0]}">${esc(s[1])}${c != null ? ` <span class="${cls(c)}">${pctTxt(c, 1)}</span>` : ""}</a>`;
+  }).join("")}</div>`;
+  const nws = (x.news || []).slice(0, full ? 3 : 1).map((n) =>
+    `<a href="${esc(n[1])}" target="_blank" rel="noopener">${esc(n[0])}<br><small>${esc(n[2])} · ${esc(n[3])}</small></a>`).join("");
+  return `<div class="card" style="margin:0 0 10px"><h2 style="margin:0 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-start">${st} ${esc(title)}
+      <small class="muted" style="font-weight:400">${since}</small></h2>
+    <p class="small" style="margin:0">${info}</p>${ths}${sts}${nws ? `<div class="news">${nws}</div>` : ""}</div>`;
+}
+const issueFresh = (I) => I && I.date === todayKST();
+
+// 홈 화면용 작은 카드 (이슈가 있을 때만)
+async function issueHome() {
+  const I = await loadIssues();
+  if (!issueFresh(I) || !I.items.length) return "";
+  ISS_T = I.t;
+  const on = I.items.filter((x) => x.state === "on");
+  const xs = (on.length ? on : I.items).slice(0, 3);
+  return `<a class="card" href="#/issues" style="display:block"><h2>🔥 오늘 시장 이슈 <small>${esc(I.t.slice(11))} 기준 ›</small></h2>
+    ${xs.map((x) => `<div class="row" style="padding:6px 0"><div class="nm"><b>${x.state === "on" ? (x.dir > 0 ? "🔺" : "🔻") : "🕗"} ${esc(x.named === false ? x.kw + " 테마" : x.kw)}</b>
+      <small>${esc(x.themes.slice(0, 3).map((t) => t[1].replace(/\(.*?\)/g, "")).join(" · "))}</small></div>
+      <div class="rt">${x.state === "on" ? `<b class="${cls(x.med)}">${pctTxt(x.med, 1)}</b>` : `<small class="muted">장 전 뉴스</small>`}</div></div>`).join("")}</a>`;
+}
+
+route(/^\/issues/, async () => {
+  view.innerHTML = `<div class="loading">오늘 이슈 불러오는 중…</div>`;
+  const [I] = await Promise.all([loadIssues(), loadLive()]);
+  const fresh = issueFresh(I);
+  if (I) ISS_T = I.t;
+  const items = I ? I.items : [];
+  const on = items.filter((x) => x.state === "on"), pre = items.filter((x) => x.state !== "on");
+  const phase = !I ? "" : !fresh ? `지난 거래일(${esc(I.date)}) 마지막 이슈예요. 오늘 이슈는 평일 오전 8시부터 나와요.`
+    : I.phase === "pre" ? "장 시작 전이에요. 밤사이 뉴스로 고른 주목 이슈예요."
+      : I.phase === "close" ? "오늘 장이 끝났어요. 마감 기준 이슈예요." : "장중이에요. 20분마다 새로 고쳐요.";
+  const gone = fresh && I.gone && I.gone.length ? `<details class="card"><summary class="small muted">🧊 오늘 내려간 이슈 ${I.gone.length}개</summary>
+    ${I.gone.slice().reverse().map((g) => `<p class="small" style="margin:6px 0">${esc(g.kw)} <span class="muted">· ${esc(g.since || "")}~${esc(g.until)} · ${esc(g.why)}</span></p>`).join("")}</details>` : "";
+  return `<div class="card"><h2>🔥 오늘 시장 이슈 <small>${I ? esc(I.t.slice(5)) + " 기준" : ""}</small></h2>
+    <p class="small" style="margin:0">${phase || "아직 이슈 자료가 없어요. 평일 오전 8시부터 만들어요."}</p></div>
+  ${on.length ? on.map((x) => issueCard(x, true)).join("") : fresh && I.phase !== "pre" ? `<div class="card"><p class="small muted" style="margin:0">지금은 시장을 크게 움직이는 이슈가 없어요.</p></div>` : ""}
+  ${pre.length ? `<h3 class="small muted" style="margin:14px 4px 6px">${fresh && I.phase === "pre" ? "🕗 장 전 주목 이슈" : "⏳ 아직 반응을 확인 중인 이슈"}</h3>${pre.map((x) => issueCard(x, true)).join("")}` : ""}
+  ${gone}
+  <div class="card"><p class="muted small" style="margin:0">어떻게 고르나요?<br>
+    · <b>장 전(8시대)</b>: 밤사이 '관련주·수혜주·특징주' 뉴스에 많이 나온 테마를 먼저 올려요.<br>
+    · <b>장중</b>: 테마 종목들의 가운데 등락률이 시장보다 2%p 넘게 움직이고, 10곳 중 4곳 넘게 3% 이상 같이 움직이면 새 이슈로 올려요. 이름은 그 종목들 뉴스 제목에 가장 많이 나온 말이에요.<br>
+    · <b>내리는 기준</b>: 시장보다 1%p 미만으로 힘이 빠지거나, 장 전 이슈가 9시 40분까지 반응이 없으면 자동으로 내려요.<br>
+    · 종목 등락률은 지금 가격이에요. 이슈는 투자 권유가 아니고, 테마 급등 뒤엔 급락도 잦아요.</p></div>${foot()}`;
+}, "themes");
+
 // ───────── 🧩 테마 ─────────
 let themeQ = "";
 route(/^\/themes/, async () => {
@@ -1681,7 +1749,7 @@ setInterval(() => {  // 장중엔 5분마다 현재가 다시 받기 (화면 보
   if (document.hidden) return;
   const h = new Date(Date.now() + 9 * 3600e3);
   const hm = h.getUTCHours() * 100 + h.getUTCMinutes(), wd = h.getUTCDay();
-  if (wd === 0 || wd === 6 || hm < 900 || hm > 1600) return;
-  loadLive(true).then(() => { if (/^(#\/?|#\/rank|#\/my)?$/.test(location.hash) && !document.querySelector("#q:focus")) render(); });
+  if (wd === 0 || wd === 6 || hm < 800 || hm > 1600) return;
+  Promise.all([loadLive(true), loadIssues(true)]).then(() => { if (/^(#\/?|#\/rank|#\/my|#\/issues)?$/.test(location.hash) && !document.querySelector("#q:focus")) render(); });
 }, 300000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
