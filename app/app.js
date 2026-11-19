@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.7.0";
+const VERSION = "2.8.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -220,7 +220,8 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 // ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
 const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/issues", "🔥", "오늘 이슈"], ["#/screen", "🔎", "조건검색"],
   ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
-  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"]];
+  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"],
+  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
@@ -647,7 +648,7 @@ function monthEvents(y, m) {
   return ev;
 }
 let calYM = null;
-route(/^\/cal/, async () => {
+route(/^\/cal(?!c)/, async () => {
   const t = kstToday();
   if (!calYM) calYM = [+t.slice(0, 4), +t.slice(5, 7) - 1];
   const [y, m] = calYM;
@@ -719,13 +720,13 @@ route(/^\/$/, async () => {
   const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !s.halted);
   const top = [...ok].sort((a, b) => b["p" + H] - a["p" + H]).slice(0, 10);
   const rec = store.get("ss-recent", []).map((c) => BYCODE.get(c)).filter(Boolean).slice(0, 5);
-  const [sc, ih] = await Promise.all([scorecardHtml(true), issueHome()]);
+  const [sc, ih, al] = await Promise.all([scorecardHtml(true), issueHome(), myAlerts().catch(() => [])]);
   return `
   ${catBar()}
   <a class="card" href="#/brief" style="display:block"><h2 style="margin:0">☀️ 아침 브리핑 <small>›</small></h2>
     <p class="small muted" style="margin:4px 0 0">어젯밤 미국 증시 · 코스피 확률 · 오늘 일정 · 어제 AI 성적을 한 화면에</p></a>
   <a class="card" href="#/market" style="display:block"><h2>📊 오늘 시장 <small>${esc(marketState())} · ${esc(liveLabel())} ›</small></h2><div class="mkt">${mk}</div>${idxNote(ij)}</a>
-  ${ih}${sc}
+  ${alertHtml(al, 3)}${ih}${sc}
   <div class="toolbar">${segH()}<span class="muted small">AI 기준일 ${esc(META?.date || "-")}</span></div>
   <div class="card"><h2>⭐ 관심 종목 <a class="small muted" href="#/my">전체 ›</a></h2>${favList(5)}</div>
   <div class="card"><h2>🔥 ${H}일 뒤 상승 확률 TOP 10 <a class="small muted" href="#/rank?up">더 보기 ›</a></h2>
@@ -740,6 +741,34 @@ route(/^\/$/, async () => {
 }, "home");
 
 // ───────── 📈 종목 분석 ─────────
+// ───────── 📏 평소 흔들림 범위 (차트 자료로 앱에서 바로 계산) ─────────
+const qtl = (a, q) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : null; };
+function swayHtml(ch, now, chgNow) {
+  const C = ch.c, Hh = ch.h, L = ch.l, N = Math.min(120, C.length - 1);
+  if (N < 40) return "";
+  const r1 = [], rng = [], r5 = [];
+  for (let i = C.length - N; i < C.length; i++) {
+    if (C[i - 1] > 0) { r1.push(Math.abs(C[i] / C[i - 1] - 1) * 100); rng.push((Hh[i] - L[i]) / C[i - 1] * 100); }
+    if (i - 5 >= 0 && C[i - 5] > 0) r5.push(Math.abs(C[i] / C[i - 5] - 1) * 100);
+  }
+  const mid = qtl(r1, 0.5), p80 = qtl(r1, 0.8), p95 = qtl(r1, 0.95), w80 = qtl(r5, 0.8), rg = qtl(rng, 0.5);
+  const a = chgNow == null ? null : Math.abs(chgNow);
+  const verdict = a == null ? "" : a <= p80 ? `오늘 <b class="${cls(chgNow)}">${pctTxt(chgNow, 1)}</b>는 <b>평소 범위 안</b>이에요. 흔한 움직임이에요.`
+    : a <= p95 ? `오늘 <b class="${cls(chgNow)}">${pctTxt(chgNow, 1)}</b>는 <b>평소보다 큰 편</b>이에요. 20일에 2~3번 나오는 정도예요.`
+      : `오늘 <b class="${cls(chgNow)}">${pctTxt(chgNow, 1)}</b>는 <b>평소 범위를 크게 벗어났어요</b>. 20일에 1번도 드문 움직임이라 이유(뉴스·공시)를 확인해 보세요.`;
+  const stop = now ? Math.round(now * (1 - 2 * p80 / 100)) : null;
+  const bar = (v, max) => `<div class="track2" style="height:8px"><i style="left:0;width:${Math.min(v / max, 1) * 100}%;background:var(--accent,#5b8def)"></i></div>`;
+  const mx = Math.max(p95, a || 0) * 1.1;
+  return `<div class="card"><h2>📏 평소 흔들림 범위 <small>최근 ${N}거래일</small></h2>
+    ${verdict ? `<div class="sumbox">${verdict}</div>` : ""}
+    <div class="bars">${[["보통 날", mid], ["10번 중 8번", p80], ["큰 날", p95], ...(a != null ? [["오늘", a]] : [])].map(([k, v]) =>
+      `<div class="b"><span>${k}</span>${bar(v, mx)}<span>±${v.toFixed(1)}%</span></div>`).join("")}</div>
+    <div class="split" style="margin-top:8px"><div class="stat"><small>하루 고가~저가 폭</small><b>${rg.toFixed(1)}%</b><div class="small muted">보통 날 기준</div></div>
+      <div class="stat"><small>일주일(5거래일) 흔들림</small><b>±${w80.toFixed(1)}%</b><div class="small muted">10번 중 8번은 이 안</div></div></div>
+    ${stop ? `<p class="small" style="margin:8px 0 0">✂️ 손절선 참고: 평소 흔들림의 2배 아래인 <b>${won(stop)}원</b> (−${(2 * p80).toFixed(1)}%) 밑으로 내려가면 '평소 흔들림'이 아닐 가능성이 커요.</p>` : ""}
+    <p class="muted small">하루 등락률의 크기(오름·내림 모두)를 최근 ${N}거래일 동안 모아 계산했어요. '10번 중 8번' 안의 움직임은 이 종목에겐 흔한 일이에요. 손절선은 참고용 계산이에요.</p></div>`;
+}
+
 route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   view.innerHTML = `<div class="loading">AI 분석 불러오는 중…</div>`;
   await loadIndex().catch(() => null);
@@ -920,6 +949,8 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
     dartSection(code, !!d.ir);
+    simSection(code);
+    ovhSection(code, pr.now);
     document.querySelectorAll("[data-vote]").forEach((b) => b.onclick = () => {
       addVote(code, d.name, H, pr.now, b.dataset.vote, Math.round(P.p * 100));
       toast("찍었어요! 기간이 지나면 내 종목 화면에서 채점해요");
@@ -951,6 +982,9 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   <div class="card"><h2>📈 주가 <span class="seg">${[[20, "1개월"], [60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
     <div class="seg" style="margin:0 0 6px">${[["d", "일봉"], ["w", "주봉"]].map(([k, l]) => `<button data-ctype="${k}" class="${k === ct ? "on" : ""}">${l}</button>`).join("")}</div>
     <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo"></p></div>
+  ${swayHtml(d.chart, pr.now, pr.chg)}
+  <div id="simbox"></div><div id="ovhbox"></div>
+  <a class="more" href="#/calc?${code}" style="text-align:center;margin:0 0 10px">🧮 이 종목으로 물타기·손익 계산하기</a>
   ${voteHtml}
   <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
   ${flHtml}${thHtml}${newsHtml}<div id="dartbox"></div>${finHtml}
@@ -1561,12 +1595,255 @@ route(/^\/my/, async () => {
       toast(`✅ ${s.name}을(를) 추가했어요`); render();
     };
   });
-  const myEr = myErHtml(await erMap(), [...favs(), ...hs.map((x) => x[0])]);
+  const [ERm, al] = await Promise.all([erMap(), myAlerts().catch(() => [])]);
+  const myEr = myErHtml(ERm, [...favs(), ...hs.map((x) => x[0])]);
   return `<div class="toolbar">${segH()}<span class="muted small">${esc(marketState())} ${esc(liveLabel())}</span></div>
-  ${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
+  ${alertHtml(al, 30)}${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
   ${holdHtml}
   <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
   <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 서버로 보내지 않아요.</p>${foot()}`;
+}, "my");
+
+// ───────── 🕰️ 닮은꼴 차트 ─────────
+const SIMC = ["#e5484d", "#f59e0b", "#10b981", "#8b5cf6", "#06b6d4"];
+function drawSim(cv, q, ms) {
+  if (!cv) return;
+  const css = getComputedStyle(document.documentElement);
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = 220;
+  cv.width = W * dpr; cv.height = Hh * dpr; cv.style.height = Hh + "px";
+  const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const all = [...q, ...ms.flatMap((m) => m[5])].filter((v) => v != null);
+  const lo = Math.min(...all), hi = Math.max(...all), N = 40, pad = { l: 4, r: 40, t: 8, b: 18 };
+  const x = (i) => pad.l + (W - pad.l - pad.r) * i / (N - 1), y = (v) => pad.t + (Hh - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
+  g.font = "11px sans-serif"; g.fillStyle = css.getPropertyValue("--muted"); g.strokeStyle = css.getPropertyValue("--line");
+  for (const v of [lo, 100, hi]) { g.beginPath(); g.moveTo(pad.l, y(v)); g.lineTo(W - pad.r, y(v)); g.stroke(); g.fillText(`${v >= 100 ? "+" : ""}${(v - 100).toFixed(0)}%`, W - pad.r + 4, y(v) + 4); }
+  g.setLineDash([3, 3]); g.beginPath(); g.moveTo(x(19), pad.t); g.lineTo(x(19), Hh - pad.b); g.stroke(); g.setLineDash([]);
+  g.fillText("닮은 구간", x(0), Hh - 4); const t2 = "그 뒤 20일"; g.fillText(t2, x(39) - g.measureText(t2).width, Hh - 4);
+  ms.forEach((m, k) => {
+    g.strokeStyle = SIMC[k]; g.globalAlpha = 0.75; g.lineWidth = 1.5; g.beginPath();
+    m[5].forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v)))); g.stroke();
+  });
+  g.globalAlpha = 1; g.strokeStyle = css.getPropertyValue("--fg"); g.lineWidth = 3; g.beginPath();
+  q.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v)))); g.stroke();
+}
+async function simSection(code) {
+  const box = $("#simbox");
+  if (!box) return;
+  let S;
+  try { S = await getJSON(`${DATA}sim/${code}.json`, 3600000); } catch { return; }
+  const ud = (r) => (r == null ? "-" : `<span class="${cls(r)}">${r > 0 ? "📈" : r < 0 ? "📉" : "➖"} ${pctTxt(r * 100, 1)}</span>`);
+  const stat = ["1", "5", "20"].map((h) => {
+    const [up, dn, n, med] = S.st[h];
+    const rate = up / n, base = S.base[h];
+    const tone = rate - base >= 0.1 ? "오른 쪽이 평소보다 많아요" : base - rate >= 0.1 ? "내린 쪽이 평소보다 많아요" : "평소와 비슷해요";
+    return `<div class="stat"><small>${h}거래일 뒤</small><b class="${cls(rate - 0.5)}">${up}번 오름</b>
+      <div class="small muted">${dn}번 내림 · 가운데 ${pctTxt(med * 100, 1)}<br>${tone}</div></div>`;
+  }).join("");
+  box.innerHTML = `<div class="card"><h2>🕰️ 닮은꼴 차트 <small>최근 20거래일 모양</small></h2>
+    <p class="small" style="margin:0 0 6px">지금 이 종목과 가장 닮은 과거 장면을 전 종목 10년치에서 찾았어요. <b>굵은 선</b>이 지금, 색 선이 과거 장면과 그 뒤 20일이에요.</p>
+    <canvas id="simcv"></canvas>
+    <table style="margin-top:6px"><tr><th>닮은 장면</th><th class="r">1일 뒤</th><th class="r">5일 뒤</th><th class="r">20일 뒤</th></tr>
+    ${S.m.map((m, k) => `<tr><td><span style="color:${SIMC[k]}">━</span> <a href="#/s/${m[0]}">${esc(m[1])}</a><br><small class="muted">${ymd(m[2])}~${ymd(m[3]).slice(3)} · 닮은 정도 ${Math.round(m[4] * 100)}%</small></td>
+      <td class="r">${ud(m[6])}</td><td class="r">${ud(m[7])}</td><td class="r">${ud(m[8])}</td></tr>`).join("")}</table>
+    <p class="small" style="margin:12px 0 4px"><b>닮은 장면 ${S.st["1"][2]}개는 그 뒤 어떻게 됐나</b></p>
+    <div class="split">${stat}</div>
+    <p class="muted small">평소(모든 과거 장면)에는 1·5·20거래일 뒤 오른 비율이 ${["1", "5", "20"].map((h) => Math.round(S.base[h] * 100) + "%").join("·")}예요. 이것보다 많이 높거나 낮아야 의미가 있어요.
+      과거 모양이 닮았다고 똑같이 움직이는 건 아니에요. AI 확률과는 따로 계산한 참고 자료예요. (${esc(S.date)} 종가 기준)</p></div>`;
+  drawSim($("#simcv"), S.q, S.m);
+}
+
+// ───────── 💣 물량 폭탄 경고 (전환사채·신주인수권·교환사채) ─────────
+const OVK = { cb: ["전환사채", "전환가"], bw: ["신주인수권부사채", "행사가"], eb: ["교환사채", "교환가"] };
+function ovhCalc(rows, now) {
+  const today = todayKST();
+  let open = 0, soon = 0;
+  // 지금 가격이 전환가의 3배를 넘거나 비율이 100% 넘는 건 이미 주식으로 바뀌었거나(감자·병합 등) 비교가 어려운 자료라 뺌
+  const odd = rows.filter((r) => (r[5] != null && r[5] > 100) || (now != null && now / r[2] > 3)).length;
+  const items = rows.filter((r) => !((r[5] != null && r[5] > 100) || (now != null && now / r[2] > 3))).map((r) => {
+    const [k, bd, price, floor, cnt, ratio, bgd, edd, rno] = r;
+    const itm = now != null && now >= price, started = !bgd || bgd <= today;
+    const dd = bgd ? ddays(bgd) : 0;
+    if (itm && started) open += ratio || 0;
+    else if (itm && dd <= 90) soon += ratio || 0;
+    return { k, bd, price, floor, cnt, ratio, bgd, edd, rno, itm, started, dd, gap: now ? now / price - 1 : null };
+  });
+  return { items, open, soon, odd };
+}
+const ovhLevel = (o) => (o.open >= 10 ? ["🔴", "높음", "n"] : o.open >= 3 || o.soon >= 5 ? ["🟠", "주의", "z"] : ["🟢", "낮음", "p"]);
+async function ovhSection(code, now) {
+  const box = $("#ovhbox");
+  if (!box) return;
+  let O;
+  try { O = await DART("ovh.json"); } catch { return; }
+  const rows = O.s[code];
+  if (!rows || !rows.length) return;
+  const o = ovhCalc(rows, now), [ic, lv] = ovhLevel(o), adj = O.adj[code], ex = O.ex[code];
+  if (!o.items.length) return;
+  box.innerHTML = `<div class="card"><h2>💣 물량 폭탄 경고 <small>${ic} ${lv}</small></h2>
+    <div class="sumbox">${o.open > 0 ? `지금 가격이면 주식으로 바꾸는 게 이득이고 바로 바꿀 수 있는 물량이 <b>최대 전체 주식의 ${o.open.toFixed(1)}%</b>예요. 시장에 풀리면 주가에 부담이 될 수 있어요.`
+      : o.soon > 0 ? `3개월 안에 바꿀 수 있게 되는 물량이 <b>전체 주식의 ${o.soon.toFixed(1)}%</b> 있어요(지금 가격이면 이득).`
+        : `주식으로 바꿀 수 있는 사채가 있지만, 지금 가격이 바꾸는 가격보다 낮아서 당장 풀릴 가능성은 낮아요.`}</div>
+    ${o.items.map((x) => `<div class="row" style="display:block;padding:8px 0"><b>${OVK[x.k][0]}</b> <small class="muted">${esc(x.bd || "")} 결정</small>
+      ${x.itm ? (x.started ? `<span class="tag n">지금 바꾸면 이득</span>` : `<span class="tag z">이득 · ${esc(x.bgd)}부터</span>`) : `<span class="tag p">아직 손해</span>`}
+      <div class="small">${OVK[x.k][1]} <b>${won(x.price)}원</b> (지금 ${x.gap != null ? pctTxt(x.gap * 100, 1) : "-"}) · <b>${won(x.cnt)}주</b>${x.ratio != null ? ` (전체의 ${x.ratio.toFixed(1)}%)` : ""}
+        <br><span class="muted">청구 기간 ${esc(x.bgd || "?")} ~ ${esc(x.edd || "?")}${x.floor ? ` · 주가가 내리면 ${OVK[x.k][1]}가 최저 ${won(x.floor)}원까지 낮아질 수 있어요` : ""}</span>
+        · <a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${esc(x.rno)}" target="_blank" rel="noopener">공시 보기</a></div></div>`).join("")}
+    ${adj || ex ? `<p class="small">${adj ? `🔧 최근 200일 ${OVK[rows[0][0]][1]} 조정 공시 ${adj[0]}건 (마지막 ${esc(adj[1])}) · ` : ""}${ex ? `🔁 주식으로 바꾼 청구 공시 ${ex[0]}건 (마지막 ${esc(ex[1])})` : ""}</p>` : ""}
+    ${o.odd ? `<p class="muted small">지금 가격이 전환가의 3배를 넘는 오래된 사채 ${o.odd}건은 이미 주식으로 바뀌었거나 감자·주식 병합으로 비교가 어려워 뺐어요.</p>` : ""}
+    <p class="muted small">사채를 가진 사람은 주가가 전환가보다 높으면 주식으로 바꿔 팔아 이익을 낼 수 있어요. 발행 결정 당시 공시 기준이라, 이미 주식으로 바뀌었거나 갚은 물량, 그 뒤 조정된 가격은 빠져 있을 수 있어요.</p></div>`;
+}
+route(/^\/ovh/, async () => {
+  view.innerHTML = `<div class="loading">물량 경고 불러오는 중…</div>`;
+  await Promise.all([loadIndex(), loadLive()]);
+  const O = await DART("ovh.json");
+  const list = Object.entries(O.s).map(([c, rows]) => {
+    const s = BYCODE.get(c);
+    if (!s || s.halted) return null;
+    const now = priceOf(s).now;
+    return { c, s, now, chg: priceOf(s).chg, ...ovhCalc(rows, now) };
+  }).filter((x) => x && (x.open > 0 || x.soon > 0)).sort((a, b) => b.open + b.soon * 0.5 - (a.open + a.soon * 0.5));
+  return `<div class="card"><h2>💣 물량 폭탄 경고 <small>${esc(O.date)} 공시 기준 · 지금 가격</small></h2>
+    <p class="small" style="margin:0">전환사채·신주인수권부사채·교환사채 중 <b>지금 가격이면 주식으로 바꾸는 게 이득</b>인 물량이 많은 종목이에요. 바뀐 주식이 시장에 풀리면 주가가 눌릴 수 있어요.</p></div>
+  <div class="card">${list.slice(0, 80).map((x) => {
+    const [ic] = ovhLevel(x);
+    return `<a class="row" href="#/s/${x.c}"><div class="nm"><b>${ic} ${esc(x.s.name)}</b><small>바로 풀릴 수 있음 최대 ${x.open.toFixed(1)}%${x.soon ? ` · 3개월 안 ${x.soon.toFixed(1)}%` : ""}</small></div>
+      <div class="rt"><b>${won(x.now)}</b><small class="${cls(x.chg)}">${pctTxt(x.chg, 1)}</small></div></a>`;
+  }).join("") || `<p class="muted small">지금은 해당하는 종목이 없어요.</p>`}</div>
+  <div class="card"><p class="muted small" style="margin:0">🔴 바로 풀릴 수 있는 물량이 전체 주식의 10% 이상 · 🟠 3% 이상(또는 3개월 안 5% 이상) · 🟢 그 밖.<br>
+    전자공시 '사채권 발행 결정' 자료로 계산했어요. 이미 주식으로 바뀌었거나 갚은 물량은 빠지지 않았을 수 있으니, 종목 화면의 공시 링크로 확인해 보세요.</p></div>${foot()}`;
+}, "themes");
+
+// ───────── 🤖 AI 따라 했다면? (확률 상위 5종목) ─────────
+route(/^\/aifollow/, async () => {
+  view.innerHTML = `<div class="loading">불러오는 중…</div>`;
+  let A;
+  try { A = await getJSON(DATA + "aifollow.json", 3600000); } catch { A = null; }
+  const F = A && (A.h[H] || A.h[String(H)]);
+  if (!F) return `<div class="toolbar">${segH()}</div><div class="card"><p class="muted small">아직 자료가 없어요. 매일 오후 5시 계산 뒤에 생겨요.</p></div>${foot()}`;
+  const L = F.c[F.c.length - 1];
+  after(() => drawLines($("#afcv"), F.c.map((r) => r[0]), [
+    { v: F.c.map((r) => r[3] * 100), color: "#9aa3b5", w: 1.5 }, { v: F.c.map((r) => r[4] * 100), color: "--down", w: 1 },
+    { v: F.c.map((r) => r[2] * 100), color: "#f59e0b", w: 1 }, { v: F.c.map((r) => r[1] * 100), color: "--up", w: 2.5 }],
+    { ref: 0, fmt: (v) => Math.round(v) + "%", h: 220 }));
+  const card = (t, v, sub) => `<div class="stat"><small>${t}</small><b class="${cls(v)}">${pctTxt(v * 100, 1)}</b><div class="small muted">${sub}</div></div>`;
+  return `<div class="toolbar">${segH()}</div>
+  <div class="card"><h2>🤖 AI 따라 했다면? <small>최근 1년 · ${H}거래일마다</small></h2>
+    <p class="small" style="margin:0 0 8px">${H}거래일마다 AI <b>상승 확률 상위 ${A.top}종목</b>을 똑같은 돈으로 사서 ${H}거래일 뒤 팔기를 ${F.n}번 했다면?</p>
+    <div class="split">${card("AI 상위 5종목 (세금·수수료 뺌)", L[1], `수수료·세금 빼기 전 ${pctTxt(L[2] * 100, 1)}`)}${card("전 종목 평균", L[3], "아무거나 고르기와 같아요")}</div>
+    <div class="split" style="margin-top:6px">${card("AI 하위 5종목", L[4], "AI가 '내릴 것'으로 본 종목")}
+      <div class="stat"><small>전 종목 평균보다 나았던 번</small><b>${F.win}/${F.n}</b><div class="small muted">고른 종목이 오른 비율 ${Math.round(F.hit * 100)}%</div></div></div>
+    <canvas id="afcv" style="margin-top:8px"></canvas>
+    ${legend([["var(--up)", "AI 상위 5 (세금·수수료 뺌)"], ["#f59e0b", "빼기 전"], ["#9aa3b5", "전 종목 평균"], ["var(--down)", "AI 하위 5"]])}</div>
+  <div class="card"><h2>🗂 최근에 고른 종목</h2><table><tr><th>날짜</th><th>고른 5종목 (확률 → 실제)</th><th class="r">평균</th></tr>
+    ${F.last.map(([dt, ra, rall, ps]) => `<tr><td>${ymd(dt).slice(3)}</td><td class="small">${ps.map(([c, nm, p, r]) => `<a href="#/s/${c}">${esc(nm)}</a> ${Math.round(p * 100)}%→<span class="${cls(r)}">${pctTxt(r * 100, 1)}</span>`).join("<br>")}</td>
+      <td class="r"><b class="${cls(ra)}">${pctTxt(ra * 100, 1)}</b><br><small class="muted">전체 ${pctTxt(rall * 100, 1)}</small></td></tr>`).join("")}</table></div>
+  <div class="card"><p class="muted small" style="margin:0">계산 방법: 그날까지의 자료로만 배운 AI가 낸 확률(미래 정보 없음)로 상위 ${A.top}종목을 골라, <b>다음 날 시가</b>에 사서 ${H}거래일째 종가에 팔았다고 계산했어요.
+    오후 5시에 확률이 나오니 실제로 살 수 있는 가장 빠른 가격이 다음 날 시가예요. 세금·수수료는 한 번 사고팔 때 ${(A.cost * 100).toFixed(2)}%를 뺐어요.
+    1일 전략은 매일 사고팔아 세금·수수료가 크게 쌓여요. 과거 결과일 뿐 앞으로도 같다는 보장은 없어요.</p></div>${foot()}`;
+}, "themes");
+
+// ───────── 🔔 내 종목 알림 (앱을 열 때 모아서 보여 줌) ─────────
+async function myAlerts() {
+  const codes = [...new Set([...favs(), ...holds().map((x) => x[0])])].slice(0, 30);
+  if (!codes.length) return [];
+  await Promise.all([loadIndex(), loadLive()]);
+  const [ER, O] = await Promise.all([erMap().catch(() => null), DART("ovh.json").catch(() => null)]);
+  const out = [];
+  const recent = (iso) => ddays(iso) >= -2;
+  await Promise.all(codes.map(async (c) => {
+    const s = BYCODE.get(c);
+    if (!s) return;
+    const P = priceOf(s), nm = s.name;
+    if (P.chg != null && Math.abs(P.chg) >= 5) out.push([0, c, nm, `${P.chg > 0 ? "🚀 급등" : "⚠️ 급락"} <b class="${cls(P.chg)}">${pctTxt(P.chg, 1)}</b>${P.live ? " (지금)" : ""}`]);
+    const p = s["p" + H], q = s["q" + H];
+    if (p != null && q != null && Math.abs(p - q) >= 0.08) out.push([2, c, nm, `🤖 ${H}일 확률 ${Math.round(q * 100)}% → <b>${Math.round(p * 100)}%</b> (${p > q ? "크게 오름" : "크게 내림"})`]);
+    if (ER && ER[c] && ddays(ER[c][0]) >= 0 && ddays(ER[c][0]) <= 1) out.push([1, c, nm, `📅 실적 발표 ${ddays(ER[c][0]) === 0 ? "오늘" : "내일"}${ER[c][1] === "예상" ? " (예상)" : ""}`]);
+    if (O && O.s[c]) { const o = ovhCalc(O.s[c], P.now); if (o.open >= 3) out.push([3, c, nm, `💣 지금 가격이면 풀릴 수 있는 물량 ${o.open.toFixed(1)}%`]); }
+    try {
+      const d = await DART(`d/${c}.json`);
+      (d.disc || []).filter((x) => recent(x[0])).slice(0, 2).forEach((x) => out.push([1, c, nm, `📢 공시 ${esc(x[1])} <small class="muted">${esc(x[0].slice(5))}</small>`]));
+    } catch { /* 공시 파일 없음 */ }
+  }));
+  return out.sort((a, b) => a[0] - b[0]);
+}
+const alertHtml = (al, n) => !al.length ? "" : `<div class="card"><h2>🔔 내 종목 알림 <small>${al.length}개</small></h2>
+  ${al.slice(0, n).map(([, c, nm, t]) => `<a class="row" href="#/s/${c}" style="padding:6px 0"><div class="nm"><b>${esc(nm)}</b><small>${t}</small></div></a>`).join("")}
+  ${al.length > n ? `<a class="more" href="#/my">알림 ${al.length - n}개 더 보기 ›</a>` : ""}
+  <p class="muted small">관심·산 종목의 급등락(±5%), AI 확률 큰 변화(8%p 이상), 최근 공시, 실적 발표, 물량 경고를 모았어요. 앱을 열 때마다 새로 확인해요.</p></div>`;
+
+// ───────── 🧮 물타기·손익 계산기 (모두 이 휴대폰에서만 계산) ─────────
+const CALC0 = { avg: "", qty: "", now: "", add: "", addq: "", goal: "", fee: 0.015, tax: 0.2 };
+route(/^\/calc(?:\?([0-9A-Z]{6}))?/, async (code) => {
+  await Promise.all([loadIndex(), loadLive()]);
+  const st = Object.assign({}, CALC0, store.get("ss-calc", {}));
+  let nm = "";
+  if (code) {
+    const s = BYCODE.get(code);
+    if (s) {
+      nm = s.name;
+      const now = priceOf(s).now;
+      const h = holds().find((x) => x[0] === code);
+      if (st.code !== code) Object.assign(st, { avg: h ? Math.round(h[2]) : "", qty: h ? h[3] : "", add: "", addq: "", goal: "" });
+      if (now) Object.assign(st, { now, add: st.add || now });
+      st.code = code;
+    }
+  }
+  const F = [["avg", "내 평균 단가 (원)"], ["qty", "가진 수량 (주)"], ["now", "지금 가격 (원)"],
+    ["add", "추가로 살 가격 (원)"], ["addq", "추가로 살 수량 (주)"], ["goal", "만들고 싶은 평균 단가 (원, 선택)"]];
+  after(() => {
+    const calc = () => {
+      const v = {};
+      for (const k of Object.keys(CALC0)) { const e = $("#c_" + k); v[k] = e ? e.value : ""; }
+      store.set("ss-calc", { ...v, code: st.code || "" });
+      const n = (k) => parseFloat(String(v[k]).replace(/,/g, "")) || 0;
+      const avg = n("avg"), qty = n("qty"), now = n("now"), add = n("add") || now, addq = n("addq"), goal = n("goal");
+      const fee = n("fee") / 100, tax = n("tax") / 100;
+      const out = [];
+      if (avg > 0 && qty > 0) {
+        const cost = avg * qty * (1 + fee);
+        const even = avg * (1 + fee) / (1 - fee - tax);
+        out.push(`<p class="small" style="margin:6px 0 2px"><b>💰 지금 다 팔면</b></p>`);
+        if (now > 0) {
+          const sell = now * qty, minus = sell * (fee + tax), net = sell - minus - cost;
+          out.push(`<div class="split"><div class="stat"><small>실제 손익 (세금·수수료 뺀 것)</small><b class="${cls(net)}">${net > 0 ? "+" : ""}${won(Math.round(net))}원</b>
+            <div class="small ${cls(net)}">${pctTxt(net / cost * 100, 2)}</div></div>
+            <div class="stat"><small>나가는 세금·수수료</small><b>${won(Math.round(minus + avg * qty * fee))}원</b><div class="small muted">살 때+팔 때</div></div></div>`);
+        }
+        out.push(`<p class="small">본전 가격은 <b>${won(Math.ceil(even))}원</b>이에요${now > 0 ? ` (지금보다 <b class="${cls(even - now)}">${pctTxt((even / now - 1) * 100, 1)}</b>)` : ""}. 세금·수수료까지 내고 손해가 없는 가격이에요.</p>`);
+        if (addq > 0 && add > 0) {
+          const q2 = qty + addq, a2 = (avg * qty + add * addq) / q2, even2 = a2 * (1 + fee) / (1 - fee - tax);
+          out.push(`<p class="small" style="margin:12px 0 2px"><b>➕ ${won(add)}원에 ${won(addq)}주 더 사면</b></p>
+            <div class="split"><div class="stat"><small>새 평균 단가</small><b>${won(Math.round(a2))}원</b><div class="small muted">${pctTxt((a2 / avg - 1) * 100, 1)} 바뀜</div></div>
+            <div class="stat"><small>새 수량 · 더 드는 돈</small><b>${won(q2)}주</b><div class="small muted">${won(Math.round(add * addq * (1 + fee)))}원</div></div></div>
+            <p class="small">새 본전 가격 <b>${won(Math.ceil(even2))}원</b>${now > 0 ? ` (지금보다 ${pctTxt((even2 / now - 1) * 100, 1)})` : ""} · 이 종목에 들어간 돈은 모두 <b>${won(Math.round((avg * qty + add * addq) * (1 + fee)))}원</b>이에요.</p>`);
+        }
+        if (goal > 0 && add > 0) {
+          let g = "";
+          if (!(add < goal && goal < avg) && !(add > goal && goal > avg)) g = `추가로 살 가격(${won(add)}원)으로는 평균 단가를 ${won(goal)}원으로 만들 수 없어요. 목표가 지금 평균 단가와 살 가격 사이에 있어야 해요.`;
+          else {
+            const need = Math.ceil(qty * (avg - goal) / (goal - add));
+            g = `${won(add)}원에 <b>${won(need)}주</b>(약 ${won(Math.round(need * add))}원)를 더 사야 평균 단가가 ${won(goal)}원이 돼요.`;
+          }
+          out.push(`<p class="small" style="margin:12px 0 2px"><b>🎯 목표 평균 단가</b></p><p class="small">${g}</p>`);
+        }
+      } else out.push(`<p class="muted small">평균 단가와 수량을 넣으면 바로 계산해요.</p>`);
+      $("#cout").innerHTML = out.join("");
+    };
+    document.querySelectorAll("#cform input").forEach((e) => e.oninput = calc);
+    $("#creset").onclick = () => { store.set("ss-calc", {}); location.hash = "#/calc"; render(); };
+    calc();
+  });
+  const hs = holds();
+  return `<div class="card"><h2>🧮 물타기·손익 계산기 ${nm ? `<small>${esc(nm)}</small>` : ""}</h2>
+    ${hs.length ? `<div class="chips" style="margin:0 0 8px">${hs.map(([c, name]) => `<a class="chip" href="#/calc?${c}">${esc(name)}</a>`).join("")}</div>
+      <p class="muted small" style="margin:0 0 8px">💼 내가 산 종목을 누르면 평균 단가·수량·지금 가격을 채워 줘요.</p>` : ""}
+    <div id="cform" style="display:grid;gap:6px">${F.map(([k, l]) => `<label class="small">${l}<input id="c_${k}" class="num" type="number" inputmode="decimal" value="${esc(st[k])}"></label>`).join("")}
+      <details><summary class="small">수수료·세금 바꾸기</summary><div class="split" style="margin-top:6px">
+        <label class="small">수수료 (%, 살 때·팔 때 각각)<input id="c_fee" class="num" type="number" inputmode="decimal" step="0.001" value="${esc(st.fee)}"></label>
+        <label class="small">팔 때 세금 (%)<input id="c_tax" class="num" type="number" inputmode="decimal" step="0.01" value="${esc(st.tax)}"></label></div></details></div>
+    <div id="cout" style="margin-top:10px"></div>
+    <button class="more" id="creset" style="margin-top:8px">처음부터 다시</button>
+    <p class="muted small">팔 때 세금 0.20%는 2026년 코스피·코스닥 기준(증권거래세+농어촌특별세)이고, 수수료는 증권사마다 달라요. 계산은 이 휴대폰에서만 해요.</p></div>${foot()}`;
 }, "my");
 
 // ───────── 🔎 조건검색 ─────────
