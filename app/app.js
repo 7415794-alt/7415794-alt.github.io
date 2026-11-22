@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.10.0";
+const VERSION = "2.11.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -365,6 +365,15 @@ function addVote(code, name, h, price, me, ai) {
   store.set("ss-votes", v.slice(0, 60));
 }
 const holds = () => store.get("ss-hold", []);
+// 🎯 목표가 알림 {코드: [이 가격 이상, 이 가격 이하]}
+const tgts = () => store.get("ss-tgt", {});
+function tgtHit(c, now) {
+  const t = tgts()[c];
+  if (!t || now == null) return null;
+  if (t[0] && now >= t[0]) return ["u", t[0]];
+  if (t[1] && now <= t[1]) return ["d", t[1]];
+  return null;
+}
 
 // 관심 종목: 어제보다 AI 확률이 많이 바뀐 종목을 위로 (🔥 = 5%p 이상)
 function favList(limit, del) {
@@ -978,6 +987,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
     whySection(d);
+    tgtBind(code, pr.now);
     dartSection(code, !!d.ir);
     simSection(code);
     ovhSection(code, pr.now);
@@ -1015,6 +1025,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
     <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo"></p></div>
   ${swayHtml(d.chart, pr.now, pr.chg)}
   <div id="simbox"></div><div id="ovhbox"></div>
+  ${tgtCard(code, pr.now)}
   <a class="more" href="#/calc?${code}" style="text-align:center;margin:0 0 10px">🧮 이 종목으로 물타기·손익 계산하기</a>
   ${voteHtml}
   <div class="card"><h2>🎯 이 종목 AI 성적 <small>${H}일 뒤</small></h2>${statHtml}${trackHtml}${moreAi}</div>
@@ -1154,6 +1165,45 @@ function fmtInd(c, v) {
   if (["hhll", "double_pat", "hs_pat", "cross_5_20", "cross_20_60"].includes(c)) return `${v > 0 ? "+" : ""}${v.toFixed(0)}`;
   return v.toFixed(2);
 }
+// 🎯 목표가 알림 카드 (종목 화면)
+function tgtCard(code, now) {
+  const t = tgts()[code] || [null, null], th = tgtHit(code, now);
+  const gap = (v) => (v && now ? ` <small class="muted">(지금보다 ${pctTxt((v / now - 1) * 100, 1)})</small>` : "");
+  return `<div class="card"><h2>🎯 목표가 알림 ${t[0] || t[1] ? `<small>${th ? "🎯 도달!" : "기다리는 중"}</small>` : ""}</h2>
+    <div class="split"><label class="small">📈 이 가격 <b>이상</b>이면${gap(t[0])}<input id="tgu" class="num" type="number" inputmode="numeric" placeholder="예: ${won(Math.round(now * 1.1 / 10) * 10)}" value="${t[0] || ""}"></label>
+      <label class="small">📉 이 가격 <b>이하</b>면${gap(t[1])}<input id="tgd" class="num" type="number" inputmode="numeric" placeholder="예: ${won(Math.round(now * 0.9 / 10) * 10)}" value="${t[1] || ""}"></label></div>
+    <div class="split" style="margin-top:6px"><button class="more" id="tgsave">저장</button>${t[0] || t[1] ? `<button class="more" id="tgdel">지우기</button>` : ""}</div>
+    <p class="muted small">장중(9시~3시 반) 20분마다 확인해서, 정한 가격에 닿으면 휴대폰 알림을 보내요. 같은 가격 알림은 한 번만 가요. 알림을 받으려면 내 종목 화면에서 '🔔 알림 켜기'를 해 주세요 (안 켜도 앱을 열면 내 종목 알림에 보여요).</p></div>`;
+}
+function tgtList() {
+  const T = Object.entries(tgts());
+  if (!T.length) return "";
+  return `<div class="card"><h2>🎯 내 목표가 알림 <small>${T.length}종목</small></h2>
+    ${T.map(([c, [u, dd]]) => {
+      const s = BYCODE.get(c), now = s ? priceOf(s).now : null, th = tgtHit(c, now);
+      return `<a class="row" href="#/s/${c}" style="padding:6px 0"><div class="nm"><b>${th ? "🎯 " : ""}${esc(s ? s.name : c)}</b>
+        <small>${u ? `📈 ${won(u)}원 이상` : ""}${u && dd ? " · " : ""}${dd ? `📉 ${won(dd)}원 이하` : ""}${now ? ` · 지금 ${won(now)}원` : ""}${th ? " · <b>도달</b>" : ""}</small></div></a>`;
+    }).join("")}
+    <p class="muted small">바꾸거나 지우려면 종목을 눌러 그 화면의 '🎯 목표가 알림'에서 하세요.</p></div>`;
+}
+function tgtBind(code, now) {
+  const sv = $("#tgsave");
+  if (!sv) return;
+  sv.onclick = () => {
+    const num = (id) => { const v = Math.round(+$(id).value); return v > 0 ? v : null; };
+    const up = num("#tgu"), dn = num("#tgd");
+    if (up && now && up <= now) return toast("'이상' 가격은 지금 가격보다 높게 정해 주세요");
+    if (dn && now && dn >= now) return toast("'이하' 가격은 지금 가격보다 낮게 정해 주세요");
+    const all = tgts();
+    if (!up && !dn) delete all[code]; else all[code] = [up, dn];
+    if (Object.keys(all).length > 30) return toast("목표가 알림은 30종목까지 정할 수 있어요");
+    store.set("ss-tgt", all); pushSync();
+    toast(up || dn ? "🎯 목표가를 저장했어요" : "목표가를 지웠어요"); render();
+  };
+  const dl = $("#tgdel");
+  if (dl) dl.onclick = () => { const all = tgts(); delete all[code]; store.set("ss-tgt", all); pushSync(); toast("목표가를 지웠어요"); render(); };
+}
+
 // ❓ 왜 이 확률? — 영향이 큰 지표 3개 (그 지표가 보통 종목 수준이면 확률이 얼마나 달라지나)
 const FL_NAME = { fl_frg5: "외국인 매매(5일)", fl_org5: "기관 매매(5일)", fl_ind5: "개인 매매(5일)" };
 async function whySection(d) {
@@ -1696,6 +1746,7 @@ route(/^\/my/, async () => {
   ${alertHtml(al, 30)}${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
   ${holdHtml}
   ${checkHtml}
+  ${tgtList()}
   <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
   ${pc}
   <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 휴대폰 알림을 켜면 종목 코드만 알림 서버로 보내요.</p>${foot()}`;
@@ -1889,7 +1940,7 @@ route(/^\/aifollow/, async () => {
 
 // ───────── 🔔 내 종목 알림 (앱을 열 때 모아서 보여 줌) ─────────
 async function myAlerts() {
-  const codes = [...new Set([...favs(), ...holds().map((x) => x[0])])].slice(0, 30);
+  const codes = [...new Set([...favs(), ...holds().map((x) => x[0]), ...Object.keys(tgts())])].slice(0, 40);
   if (!codes.length) return [];
   await Promise.all([loadIndex(), loadLive()]);
   const [ER, O] = await Promise.all([erMap().catch(() => null), DART("ovh.json").catch(() => null)]);
@@ -1899,6 +1950,8 @@ async function myAlerts() {
     const s = BYCODE.get(c);
     if (!s) return;
     const P = priceOf(s), nm = s.name;
+    const th = tgtHit(c, P.now);
+    if (th) out.push([0, c, nm, `🎯 목표가 <b>${won(th[1])}원 ${th[0] === "u" ? "이상" : "이하"}</b> 도달 · 지금 ${won(P.now)}원`]);
     if (P.chg != null && Math.abs(P.chg) >= 5) out.push([0, c, nm, `${P.chg > 0 ? "🚀 급등" : "⚠️ 급락"} <b class="${cls(P.chg)}">${pctTxt(P.chg, 1)}</b>${P.live ? " (지금)" : ""}`]);
     const p = s["p" + H], q = s["q" + H];
     if (p != null && q != null && Math.abs(p - q) >= 0.08) out.push([2, c, nm, `🤖 ${H}일 확률 ${Math.round(q * 100)}% → <b>${Math.round(p * 100)}%</b> (${p > q ? "크게 오름" : "크게 내림"})`]);
@@ -1931,10 +1984,11 @@ async function pushSync(force) {
   const s = await pushSub();
   if (!s) return false;
   const codes = [...new Set([...favs(), ...holds().map((x) => x[0])])];
-  const sig = JSON.stringify([codes, pushKinds(), s.endpoint.slice(-20), todayKST().slice(0, 7)]);
+  const tg = tgts();
+  const sig = JSON.stringify([codes, pushKinds(), s.endpoint.slice(-20), todayKST().slice(0, 7), tg]);
   if (!force && store.get("ss-push-sig", "") === sig) return true;
   try {
-    const r = await fetch(PUSH_URL + "/sub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sub: s.toJSON(), codes, kinds: pushKinds() }) });
+    const r = await fetch(PUSH_URL + "/sub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sub: s.toJSON(), codes, kinds: pushKinds(), tg }) });
     if (r.ok) store.set("ss-push-sig", sig);
     return r.ok;
   } catch { return false; }
@@ -1975,7 +2029,7 @@ async function pushCard() {
     ${on ? PUSH_KINDS.map(([k, t, d]) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-pk="${k}" ${ks.includes(k) ? "checked" : ""}><span><b>${t}</b><br><span class="muted">${d}</span></span></label>`).join("")
       : `<p class="small" style="margin:0 0 6px">관심 종목·산 종목이 크게 움직이거나 새 공시가 나오면 앱을 열지 않아도 알려 드려요.</p>`}
     <button class="more" id="pushbtn">${on ? "알림 끄기" : "🔔 알림 켜기"}</button>
-    <p class="muted small">알림을 보내려고 이 휴대폰의 알림 주소와 내 종목 코드만 알림 서버(Cloudflare)에 저장해요. 이름·산 가격·수량은 보내지 않아요. 90일 동안 앱을 열지 않으면 자동으로 지워져요.</p></div>`;
+    <p class="muted small">알림을 보내려고 이 휴대폰의 알림 주소와 내 종목 코드(목표가 알림을 정했다면 그 가격도)만 알림 서버(Cloudflare)에 저장해요. 이름·산 가격·수량은 보내지 않아요. 90일 동안 앱을 열지 않으면 자동으로 지워져요.</p></div>`;
 }
 
 // ───────── 🧮 물타기·손익 계산기 (모두 이 휴대폰에서만 계산) ─────────
