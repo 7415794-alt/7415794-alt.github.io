@@ -100,6 +100,9 @@ input.num{width:100%;border:1px solid var(--line);background:var(--soft);color:v
 .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 0 12px}
 .cats a{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 2px;font-size:12px}
 .cats a b{font-size:20px;line-height:1.2}
+.cats a.picked{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.cats .pinno{display:inline-block;min-width:16px;border-radius:8px;background:var(--accent);color:var(--bg);font-size:10px;font-weight:700;margin-left:2px}
+body.menu-edit .cats a:not(.picked){opacity:.6}
 .mv{font-size:11px;font-weight:700;margin-left:5px}
 .mv.new{font-size:12px}
 .sumbox{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:10px}

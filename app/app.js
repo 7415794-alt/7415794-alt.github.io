@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.12.0";
+const VERSION = "2.13.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -221,11 +221,39 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
   <a href="/disclaimer.html">면책 고지</a> · <a href="/privacy.html">개인정보처리방침</a> · 문의 <a href="mailto:slakeknowledge@gmail.com">slakeknowledge@gmail.com</a> · v${VERSION}</p>`;
 
 // ───────── 전체 메뉴 (예전 앱의 8가지 화면) ─────────
-const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/issues", "🔥", "오늘 이슈"], ["#/screen", "🔎", "조건검색"],
-  ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
-  ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"],
-  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/risk", "⚠️", "위험 종목"], ["#/terms", "📖", "용어 사전"]];
-const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
+// 메뉴: 묶음별 화면 목록 (더보기에서 묶어서, 홈에는 8칸만)
+const MENU = [
+  ["🤖 AI 예측", [["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/score", "📋", "AI 성적표"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/cmp", "🆚", "비교"]]],
+  ["💼 내 투자", [["#/my", "💼", "내 종목"], ["#/calc", "🧮", "계산기"], ["#/risk", "⚠️", "위험 종목"], ["#/ovh", "💣", "물량 경고"]]],
+  ["🗞 시장 소식", [["#/issues", "🔥", "오늘 이슈"], ["#/themes", "🧩", "테마"], ["#/market", "🌏", "시장 분위기"], ["#/cal", "📅", "일정 달력"],
+    ["#/ins", "👔", "임원 매매"], ["#/div", "💰", "배당 순위"], ["#/brief", "☀️", "아침 브리핑"]]],
+  ["🔎 찾기·공부", [["#/screen", "🔎", "조건검색"], ["#/terms", "📖", "용어 사전"]]],
+];
+const CATS = MENU.flatMap((g) => g[1]);
+const TABBED = new Set(["#/", "#/my", "#/rank?up", "#/themes"]); // 아래 탭에 이미 있는 화면은 홈 8칸에서 뺌
+const HOME_DEF = ["#/issues", "#/cal", "#/score", "#/risk", "#/calc", "#/screen", "#/terms"];
+const HOME_N = 7;
+const tile = ([u, e, l], extra = "") => `<a href="${u}" data-m="${u}"${extra}><b>${e}</b>${l}</a>`;
+// 홈 메뉴: 직접 고른 것(📌) → 많이 누른 순 → 기본 순서
+function homeMenu() {
+  const by = new Map(CATS.map((c) => [c[0], c]));
+  const pin = store.get("ss-pin", null);
+  if (Array.isArray(pin) && pin.length) return pin.map((u) => by.get(u)).filter(Boolean).slice(0, HOME_N);
+  const n = store.get("ss-clicks", {});
+  return CATS.filter((c) => !TABBED.has(c[0]))
+    .map((c, i) => [c, (n[c[0]] || 0) * 20 + (HOME_DEF.includes(c[0]) ? 50 - HOME_DEF.indexOf(c[0]) : -i)])
+    .sort((a, b) => b[1] - a[1]).slice(0, HOME_N).map((x) => x[0]);
+}
+const catBar = () => { menuEdit = false; document.body.classList.remove("menu-edit"); return catBarHtml(); };
+const catBarHtml = () => `<div class="cats">${homeMenu().map((c) => tile(c)).join("")}${tile(["#/more", "📂", "전체"])}</div>`;
+// 메뉴를 누를 때마다 이 휴대폰에만 횟수를 셈 (홈 자동 정렬용)
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("a[data-m]");
+  if (!a || a.dataset.m === "#/more" || document.body.classList.contains("menu-edit")) return;
+  const n = store.get("ss-clicks", {});
+  n[a.dataset.m] = Math.min((n[a.dataset.m] || 0) + 1, 9999);
+  store.set("ss-clicks", n);
+});
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
 function marketState() {
@@ -2285,6 +2313,41 @@ route(/^\/cmp(?:\?([0-9A-Z]{6})?-([0-9A-Z]{6})?)?/, async (a, b) => {
 const inApp = () => matchMedia("(display-mode: standalone)").matches || document.referrer.startsWith("android-app://");
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; });
+// 📂 전체 메뉴 (묶음별) + ✏️ 홈 메뉴 편집
+let menuEdit = false;
+function menuAll() {
+  const pin = store.get("ss-pin", null), auto = !(Array.isArray(pin) && pin.length);
+  const sel = menuEdit ? (store.get("ss-pin-draft", null) || homeMenu().map((c) => c[0])) : [];
+  after(() => {
+    document.body.classList.toggle("menu-edit", menuEdit);
+    $("#medit").onclick = () => {
+      if (menuEdit) { store.set("ss-pin", sel); store.set("ss-pin-draft", null); toast("🏠 홈 메뉴를 저장했어요"); }
+      else store.set("ss-pin-draft", homeMenu().map((c) => c[0]));
+      menuEdit = !menuEdit; render();
+    };
+    const ra = $("#mauto");
+    if (ra) ra.onclick = () => { store.set("ss-pin", null); store.set("ss-pin-draft", null); menuEdit = false; toast("자주 쓰는 순서로 자동 정리해요"); render(); };
+    if (menuEdit) document.querySelectorAll(".cats a[data-m]").forEach((a) => a.onclick = (e) => {
+      e.preventDefault();
+      const u = a.dataset.m, d = [...sel], k = d.indexOf(u);
+      if (k >= 0) d.splice(k, 1);
+      else if (d.length >= HOME_N) return toast(`홈에는 ${HOME_N}개까지 놓을 수 있어요. 먼저 하나를 빼 주세요`);
+      else d.push(u);
+      store.set("ss-pin-draft", d); render();
+    });
+  });
+  const groups = MENU.map(([g, items]) => `<p class="small" style="margin:10px 0 6px"><b>${g}</b></p><div class="cats" style="margin:0">${items.map((c) => {
+    const k = sel.indexOf(c[0]);
+    return menuEdit ? tile([c[0], c[1], c[2] + (k >= 0 ? ` <span class="pinno">${k + 1}</span>` : "")], ` class="${k >= 0 ? "picked" : ""}"`) : tile(c);
+  }).join("")}</div>`).join("");
+  return `<div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center">📂 전체 메뉴
+      <button class="icon-btn" id="medit">${menuEdit ? "✅ 저장" : "✏️ 홈 메뉴 편집"}</button></h2>
+    ${menuEdit ? `<p class="small" style="margin:0 0 4px">홈 위쪽에 놓을 화면을 순서대로 눌러 주세요 (<b>${sel.length}/${HOME_N}</b>). 다시 누르면 빠져요. 다 고르면 '✅ 저장'.</p>`
+      : `<p class="muted small" style="margin:0">홈 위쪽에는 ${auto ? "<b>자주 쓰는 화면 7개</b>가 저절로 놓여요 (이 휴대폰에서 누른 횟수 기준)" : "<b>직접 고른 화면 7개</b>가 놓여 있어요"}.</p>`}
+    ${groups}
+    ${!auto || menuEdit ? `<button class="more" id="mauto" style="margin-top:10px">🔄 자주 쓰는 순서로 자동 정리</button>` : ""}
+    <p class="muted small">아래 탭: 🏠 홈(종목 검색·분석) · 🏆 순위 · 🧩 테마 · ⭐ 내 종목</p></div>`;
+}
 route(/^\/more/, async () => {
   await loadIndex().catch(() => null);
   const th = store.get("ss-theme", "auto");
@@ -2295,7 +2358,7 @@ route(/^\/more/, async () => {
     $("#refresh").onclick = () => { memo.clear(); INDEX = null; for (const o of [hitPool, orderMemo]) for (const k in o) delete o[k]; toast("새로 불러왔어요"); location.hash = "#/"; render(); };
   });
   const link = (u, t) => `<a class="row" href="${u}"><div class="nm"><b>${t}</b></div><span class="muted">›</span></a>`;
-  return `<div class="card"><h2>📂 전체 메뉴</h2>${catBar()}<p class="muted small">예전 앱의 8가지 화면을 모두 여기서 열 수 있어요. 아래 탭: 🏠 홈(분석) · 🏆 순위(확률·적중·조건검색) · 🧩 테마 · ⭐ 내 종목(관심·산 종목·AI vs 나).</p></div>
+  return `${menuAll()}
   <div class="card"><h2>⚙️ 설정</h2>
     <div class="row"><div class="nm"><b>화면 색</b></div><div class="seg">${[["auto", "자동"], ["light", "밝게"], ["dark", "어둡게"]]
       .map(([v, l]) => `<button data-th="${v}" class="${v === th ? "on" : ""}">${l}</button>`).join("")}</div></div>
