@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.11.0";
+const VERSION = "2.12.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -224,7 +224,7 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/issues", "🔥", "오늘 이슈"], ["#/screen", "🔎", "조건검색"],
   ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
   ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"],
-  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/risk", "⚠️", "위험 종목"]];
+  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/risk", "⚠️", "위험 종목"], ["#/terms", "📖", "용어 사전"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
@@ -1833,6 +1833,39 @@ function riskOf(s, O) {
 }
 
 // ───────── ⚠️ 위험 종목 모아 보기 ─────────
+// ───────── 📖 주식 용어 사전 (사이트 glossary.html과 같은 내용) ─────────
+route(/^\/terms(?:\?(.+))?/, async (q0) => {
+  let T;
+  try { T = await getJSON("terms.json?v=" + VERSION, 86400000); } catch { return `<div class="card">용어 사전을 불러오지 못했어요.</div>${foot()}`; }
+  const q = q0 ? decodeURIComponent(q0) : "";
+  after(() => {
+    const inp = $("#tq"), rows = [...document.querySelectorAll("[data-tk]")], heads = [...document.querySelectorAll("[data-tc]")];
+    let cat = "";
+    const apply = () => {
+      const k = inp.value.trim().toLowerCase().replace(/\s+/g, "");
+      let n = 0;
+      rows.forEach((r) => { const ok = (!cat || r.dataset.c === cat) && (!k || r.dataset.tk.includes(k)); r.style.display = ok ? "" : "none"; n += ok; });
+      heads.forEach((h) => { h.style.display = rows.some((r) => r.dataset.c === h.dataset.tc && r.style.display !== "none") ? "" : "none"; });
+      $("#tn").textContent = `${n}개`;
+    };
+    inp.oninput = apply;
+    document.querySelectorAll("[data-tcat]").forEach((b) => b.onclick = () => {
+      cat = cat === b.dataset.tcat ? "" : b.dataset.tcat;
+      document.querySelectorAll("[data-tcat]").forEach((x) => x.classList.toggle("on", x.dataset.tcat === cat));
+      apply();
+    });
+    apply();
+  });
+  const body = T.cats.map((c) => `<h2 data-tc="${esc(c)}" style="margin:14px 0 4px">${esc(c)}</h2>` + T.terms.filter((t) => t[0] === c).map(([, n, aka, d, l]) =>
+    `<details data-c="${esc(c)}" data-tk="${esc((n + aka + d).toLowerCase().replace(/\s+/g, ""))}" style="border-bottom:1px solid var(--line);padding:6px 0">
+      <summary><b>${esc(n)}</b>${aka ? ` <small class="muted">${esc(aka)}</small>` : ""}</summary>
+      <p class="small" style="margin:6px 0">${esc(d)}${l ? ` <a href="/${l}">자세히 읽기 ›</a>` : ""}</p></details>`).join("")).join("");
+  return `<div class="card"><h2>📖 주식 용어 사전 <small id="tn">${T.terms.length}개</small></h2>
+    <input id="tq" class="num" placeholder="용어 검색 (예: PER, 배당락, 공매도)" value="${esc(q)}" autocomplete="off">
+    <div class="seg" style="flex-wrap:wrap;margin-top:8px">${T.cats.map((c) => `<button data-tcat="${esc(c)}">${esc(c)}</button>`).join("")}</div></div>
+  <div class="card">${body}<p class="muted small">용어를 누르면 풀이가 열려요. 제도와 숫자(세율·거래 시간 등)는 바뀔 수 있으니 거래 전에 증권사 안내도 확인하세요.</p></div>${foot()}`;
+}, "more");
+
 let riskTab = store.get("ss-risk", "all");
 route(/^\/risk/, async () => {
   view.innerHTML = `<div class="loading">위험 종목 불러오는 중…</div>`;
