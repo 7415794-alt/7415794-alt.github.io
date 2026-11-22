@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.9.0";
+const VERSION = "2.9.1";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -90,6 +90,8 @@ function word(p) {
   if (p > 0.35) return "내릴 가능성이 조금 더 높아요";
   return "내릴 가능성이 높아요";
 }
+// 거래정지: 어제 계산 기준 + 장중에 새로 멈춘 종목 (모든 순위에서 뺌)
+const halt = (s) => !!(s && (s.halted || priceOf(s).halted));
 function priceOf(s) {
   const l = live(s.code);
   if (l && l[0] != null) return { now: l[0], chg: l[1], halted: l[3], live: true };
@@ -246,7 +248,7 @@ const orderMemo = {};
 function orderMap(key, desc) {
   const id = key + desc;
   if (!orderMemo[id]) {
-    const l = INDEX.filter((s) => s[key] != null && !s.halted).sort((a, b) => (desc ? b[key] - a[key] : a[key] - b[key]));
+    const l = INDEX.filter((s) => s[key] != null && !halt(s)).sort((a, b) => (desc ? b[key] - a[key] : a[key] - b[key]));
     orderMemo[id] = new Map(l.map((s, i) => [s.code, i + 1]));
   }
   return orderMemo[id];
@@ -451,7 +453,7 @@ route(/^\/brief/, async () => {
   const ths = th.filter((t) => t.chg != null).sort((a, b) => b.chg - a.chg);
   const thRow = (t) => `<a class="row" href="#/t/${t.no}"><div class="nm"><b>${esc(t.name)}</b></div><div class="rt"><b class="${cls(t.chg)}">${pctTxt(t.chg, 1)}</b></div></a>`;
   const oldH = H; H = 1;
-  const top = INDEX.filter((s) => s.p1 != null && !s.managed && !s.alert && !s.halted).sort((a, b) => b.p1 - a.p1).slice(0, 5);
+  const top = INDEX.filter((s) => s.p1 != null && !s.managed && !s.alert && !halt(s)).sort((a, b) => b.p1 - a.p1).slice(0, 5);
   const topHtml = top.map((s, i) => stockRow(s, { rank: i + 1 })).join("");
   const favHtml = favs().length ? favList(5) : "";
   H = oldH;
@@ -542,7 +544,7 @@ route(/^\/score/, async () => {
   // 어제 TOP 20 종목별 결과
   let picks = "";
   if (META && META.prev_date === r.date) {
-    const pool = INDEX.filter((s) => s.q1 != null && s.chg != null && !s.halted);
+    const pool = INDEX.filter((s) => s.q1 != null && s.chg != null && !halt(s));
     const row = (s, i, want) => {
       const ok = want > 0 ? s.chg > 0 : s.chg < 0;
       return `<a class="row" href="#/s/${s.code}"><div class="nm"><b>${i + 1}. ${esc(s.name)}</b><small>어제 AI 확률 ${Math.round(s.q1 * 100)}%</small></div>
@@ -718,7 +720,7 @@ route(/^\/$/, async () => {
       <b>${v ? v[0].toLocaleString("ko-KR", { maximumFractionDigits: 2 }) : "-"}</b>
       <div class="${cls(v && v[1])}">${v ? pctTxt(v[1]) : ""}</div>${idxProb(ij, k)}</div>`;
   }).join("");
-  const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !s.halted);
+  const ok = INDEX.filter((s) => s["p" + H] != null && !s.managed && !s.alert && !halt(s));
   const top = [...ok].sort((a, b) => b["p" + H] - a["p" + H]).slice(0, 10);
   const rec = store.get("ss-recent", []).map((c) => BYCODE.get(c)).filter(Boolean).slice(0, 5);
   const [sc, ih, al] = await Promise.all([scorecardHtml(true), issueHome(), myAlerts().catch(() => [])]);
@@ -1163,7 +1165,7 @@ route(/^\/rank(?:\?(\w+))?/, async (by) => {
   if (!["up", "down", "best", "worst"].includes(rankState.by)) rankState.by = "up";
   await Promise.all([loadIndex(), loadLive()]);
   const k = "p" + H, hk = "hr" + H;
-  let list = INDEX.filter((s) => s[k] != null && !s.halted);
+  let list = INDEX.filter((s) => s[k] != null && !halt(s));
   if (rankState.mkt !== "ALL") list = list.filter((s) => s.market === rankState.mkt);
   if (rankState.safe) list = list.filter((s) => !s.managed && !s.alert);
   if (rankState.by === "up") list.sort((a, b) => b[k] - a[k]);
@@ -1321,7 +1323,7 @@ route(/^\/div/, async () => {
   let D;
   try { D = await DART("div.json"); } catch { return `<div class="card"><h2>💰 배당 순위</h2><p class="muted">배당 자료를 준비하고 있어요. 잠시 뒤 다시 와 주세요.</p></div>${foot()}`; }
   let list = D.rows.map(([code, name, dps, yld, year, payout, up]) => ({ code, name, dps, yld, year, payout, up, s: BYCODE.get(code) }))
-    .filter((r) => r.s && !r.s.halted && !(r.yld > 50));
+    .filter((r) => r.s && !halt(r.s) && !(r.yld > 50));
   if (divState.safe) list = list.filter((r) => !r.s.managed && !r.s.alert);
   const k = divState.by === "dps" ? "dps" : "yld";
   list.sort((a, b) => (b[k] ?? -1) - (a[k] ?? -1));
@@ -1487,11 +1489,11 @@ route(/^\/t\/(\d+)/, async (no) => {
     : r === "M" ? (s[5] != null ? `최근 3개월 테마가 오른 날 테마 평균보다 ${s[5] > 0 ? "+" : ""}${(s[5] * 100).toFixed(1)}%p 더 움직였어요` : "최근 테마 상승일에 가장 강했어요")
     : (s[6] != null ? `최근 5일 거래대금이 평소의 ${s[6].toFixed(1)}배 · 매수세 강함` : "거래대금 증가와 매수세가 가장 강해요");
   const leaders = ["L", "M", "F"].map((r) => {
-    const s = t.stocks.find((x) => x[4].includes(r));
+    const s = t.stocks.find((x) => x[4].includes(r) && !halt(BYCODE.get(x[0])));
     return s ? `<a class="role" href="#/s/${s[0]}"><span class="em">${ROLE[r][0]}</span><div style="flex:1;min-width:0"><b>${ROLE[r][1]} · ${esc(s[1])}</b>
       <div class="muted small">${esc(reason(r, s))}</div></div><span class="${cls(s[2])}">${pctTxt(s[2])}</span></a>` : "";
   }).join("");
-  const stocks = [...t.stocks].sort((a, b) => (b[2] ?? -999) - (a[2] ?? -999));
+  const stocks = t.stocks.filter((x) => !halt(BYCODE.get(x[0]))).sort((a, b) => (b[2] ?? -999) - (a[2] ?? -999));
   const st = t.stat || {};
   const statLines = [["up", "🔴 호재", "오른"], ["down", "🔵 악재", "내린"]].map(([k, w, v]) => {
     if (!st[k + "_days"] || st[k + "_eff"] == null) return "";
@@ -1700,7 +1702,7 @@ route(/^\/ovh/, async () => {
   const O = await DART("ovh.json");
   const list = Object.entries(O.s).map(([c, rows]) => {
     const s = BYCODE.get(c);
-    if (!s || s.halted) return null;
+    if (!s || halt(s)) return null;
     const now = priceOf(s).now;
     return { c, s, now, chg: priceOf(s).chg, ...ovhCalc(rows, now) };
   }).filter((x) => x && (x.open > 0 || x.soon > 0)).sort((a, b) => b.open + b.soon * 0.5 - (a.open + a.soon * 0.5));
@@ -1739,9 +1741,12 @@ route(/^\/aifollow/, async () => {
   <div class="card"><h2>🗂 최근에 고른 종목</h2><table><tr><th>날짜</th><th>고른 5종목 (확률 → 실제)</th><th class="r">평균</th></tr>
     ${F.last.map(([dt, ra, rall, ps]) => `<tr><td>${ymd(dt).slice(3)}</td><td class="small">${ps.map(([c, nm, p, r]) => `<a href="#/s/${c}">${esc(nm)}</a> ${Math.round(p * 100)}%→<span class="${cls(r)}">${pctTxt(r * 100, 1)}</span>`).join("<br>")}</td>
       <td class="r"><b class="${cls(ra)}">${pctTxt(ra * 100, 1)}</b><br><small class="muted">전체 ${pctTxt(rall * 100, 1)}</small></td></tr>`).join("")}</table></div>
+  ${F.last.length && F.last[0][5] ? `<details class="card"><summary><b>🔻 같은 날 AI 하위 5종목</b> <small class="muted">AI가 '내릴 것'으로 본 종목</small></summary><table><tr><th>날짜</th><th>하위 5종목 (확률 → 실제)</th><th class="r">평균</th></tr>
+    ${F.last.map(([dt, , rall, , rl, ps]) => `<tr><td>${ymd(dt).slice(3)}</td><td class="small">${(ps || []).map(([c, nm, p, r]) => `<a href="#/s/${c}">${esc(nm)}</a> ${Math.round(p * 100)}%→<span class="${cls(r)}">${pctTxt(r * 100, 1)}</span>`).join("<br>")}</td>
+      <td class="r"><b class="${cls(rl)}">${pctTxt(rl * 100, 1)}</b><br><small class="muted">전체 ${pctTxt(rall * 100, 1)}</small></td></tr>`).join("")}</table></details>` : ""}
   <div class="card"><p class="muted small" style="margin:0">계산 방법: 그날까지의 자료로만 배운 AI가 낸 확률(미래 정보 없음)로 상위 ${A.top}종목을 골라, <b>다음 날 시가</b>에 사서 ${H}거래일째 종가에 팔았다고 계산했어요.
     오후 5시에 확률이 나오니 실제로 살 수 있는 가장 빠른 가격이 다음 날 시가예요. 세금·수수료는 한 번 사고팔 때 ${(A.cost * 100).toFixed(2)}%를 뺐어요.
-    1일 전략은 매일 사고팔아 세금·수수료가 크게 쌓여요. 과거 결과일 뿐 앞으로도 같다는 보장은 없어요.</p></div>${foot()}`;
+    ${A.skip ? `거래정지 종목, 스팩·우선주, 가격 제한폭(30%)을 넘게 튄 자료(재상장·주식 쪼개기 같은 자료 문제)는 계산에서 뺐어요. ` : ""}1일 전략은 매일 사고팔아 세금·수수료가 크게 쌓여요. 과거 결과일 뿐 앞으로도 같다는 보장은 없어요.</p></div>${foot()}`;
 }, "themes");
 
 // ───────── 🔔 내 종목 알림 (앱을 열 때 모아서 보여 줌) ─────────
@@ -1916,7 +1921,7 @@ let scShow = 30;
 route(/^\/screen/, async () => {
   await Promise.all([loadIndex(), loadLive()]);
   const k = "p" + H, hk = "hr" + H;
-  let d = INDEX.filter((s) => s[k] != null && !s.halted && s[k] >= scState.prob / 100);
+  let d = INDEX.filter((s) => s[k] != null && !halt(s) && s[k] >= scState.prob / 100);
   if (scState.hit < 100) d = d.filter((s) => { const t = hitTop(s[hk]); return t != null && t <= scState.hit; });
   if (scState.mkt !== "ALL") d = d.filter((s) => s.market === scState.mkt);
   const PR = { all: [0, Infinity], a: [0, 1e4], b: [1e4, 5e4], c: [5e4, 2e5], d: [2e5, Infinity] }[scState.price];
@@ -1965,7 +1970,7 @@ route(/^\/market/, async () => {
       <div class="${cls(c)}">${c > 0 ? "▲" : c < 0 ? "▼" : ""}${pctTxt(c, 2)}</div></div>`;
   }).join("");
   const mood = HS.map((h) => {
-    const all = INDEX.filter((s) => s["a" + h] != null && !s.halted);
+    const all = INDEX.filter((s) => s["a" + h] != null && !halt(s));
     const share = (l) => (l.length ? l.filter((s) => s["a" + h] >= 0.5).length / l.length : null);
     const sh = share(all);
     if (sh == null) return "";

@@ -1,6 +1,6 @@
 // 앱 화면 파일은 저장해 두고(인터넷이 끊겨도 열림), 분석 자료는 항상 새로 받되 실패하면 마지막 자료를 보여 줍니다.
-const CACHE = "ss-app-v2.9.0";
-const SHELL = ["./", "index.html", "app.css?v=2.9.0", "app.js?v=2.9.0", "manifest.json", "icon-192.png"];
+const CACHE = "ss-app-v2.9.1";
+const SHELL = ["./", "index.html", "app.css?v=2.9.1", "app.js?v=2.9.1", "manifest.json", "icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
