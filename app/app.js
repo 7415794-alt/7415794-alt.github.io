@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.9.1";
+const VERSION = "2.10.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -224,7 +224,7 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 const CATS = [["#/", "🔍", "분석"], ["#/my", "💼", "내 종목"], ["#/themes", "🧩", "테마"], ["#/issues", "🔥", "오늘 이슈"], ["#/screen", "🔎", "조건검색"],
   ["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/cmp", "🆚", "비교"], ["#/market", "🌏", "시장 분위기"],
   ["#/cal", "📅", "일정 달력"], ["#/score", "📋", "AI 성적표"], ["#/div", "💰", "배당 순위"], ["#/ins", "👔", "임원 매매"],
-  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"]];
+  ["#/calc", "🧮", "계산기"], ["#/ovh", "💣", "물량 경고"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/risk", "⚠️", "위험 종목"]];
 const catBar = () => `<div class="cats">${CATS.map(([u, e, l]) => `<a href="${u}"><b>${e}</b>${l}</a>`).join("")}</div>`;
 const todayKST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const yymmdd = (iso) => +iso.slice(2).replace(/-/g, "");
@@ -435,14 +435,24 @@ function usLine(us) {
   if (vix && vix.v >= 25) parts.push(`공포지수가 ${vix.v.toFixed(1)}로 불안한 분위기예요`);
   const fx = g("원/달러 환율");
   if (fx && Math.abs(fx.c) >= 0.5) parts.push(`환율이 ${pctTxt(fx.c, 1)} 움직였어요`);
+  const nq = g("나스닥 선물");
+  if (nq && Math.abs(nq.c) >= 0.3) parts.push(`지금 나스닥 선물은 ${pctTxt(nq.c, 1)}로 ${nq.c > 0 ? "오르는" : "내리는"} 중이에요`);
   return parts.join(". ") + (parts.length ? "." : "");
 }
 route(/^\/brief/, async () => {
   const [, , ij] = await Promise.all([loadIndex(), loadLive(), getJSON(IDXP, 600000).catch(() => null)]);
   const today = kstToday();
   const day = ij && ij.KOSPI && ij.KOSPI.for >= today ? ij.KOSPI.for : today;
-  const us = (ij && ij.us) || [];
-  const usHtml = us.length ? `<div class="split">${us.map((x) => `<div class="stat"><small>${esc(x.n)}</small>
+  const us = [...((ij && ij.us) || [])];
+  // 장 시작 전 미국 지수 선물: 20분마다 받는 값(live.json)이 오늘 것이면 그걸로 바꿔 씀
+  const LI = (LIVEJ && LIVEJ.idx) || {};
+  [["NQF", "나스닥 선물"], ["ESF", "S&P 500 선물"]].forEach(([k, n]) => {
+    const l = LI[k];
+    if (!l || !l[3] || l[3].slice(0, 10) !== today) return;
+    const i = us.findIndex((x) => x.n === n), v = { n, v: l[0], c: l[1], t: l[3].slice(11) };
+    if (i >= 0) us[i] = v; else us.push(v);
+  });
+  const usHtml = us.length ? `<div class="split">${us.map((x) => `<div class="stat"><small>${esc(x.n)}${x.t ? ` <span class="muted">${x.t}</span>` : ""}</small>
       <b>${x.v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}${x.n.includes("환율") ? "원" : x.n.includes("금리") ? "%" : ""}</b>
       <div class="${x.n.includes("VIX") || x.n.includes("환율") ? "" : cls(x.c)}">${x.c > 0 ? "▲" : x.c < 0 ? "▼" : ""}${pctTxt(x.c, 2)}</div></div>`).join("")}</div>
       <p class="small" style="margin:8px 0 0">${esc(usLine(us))}</p>` : `<div class="muted small">미국 증시 요약은 평일 아침 7시쯤 나와요.</div>`;
@@ -673,8 +683,23 @@ route(/^\/cal(?!c)/, async () => {
           `<a href="#/s/${c}">${v[1] === "확정" ? "<b>" + esc(v[3]) + "</b>" : esc(v[3])}</a>`).join(" · ")}${arr.length > 120 ? " …" : ""}</span></details>` });
     });
   }
+  // 공모주·유상증자 청약 (전자공시 증권신고서)
+  let OF = [];
+  try { OF = (await DART("offer.json")).rows || []; } catch { /* 없음 */ }
+  const ymo = isoOf(y, m, 1).slice(0, 8);
+  const ofTxt = (r) => `${r[0] === "증자" ? "💵" : r[0] === "스팩" ? "📦" : "🆕"} ${r[1]} ${r[0] === "증자" ? "유상증자" : r[0] === "스팩" ? "스팩 공모" : "공모주"} 청약`;
+  OF.forEach((r) => {
+    if (r[3].startsWith(ymo)) (ev[r[3]] = ev[r[3]] || []).push({ t: `${ofTxt(r)} 시작 (~${r[4].slice(5).replace("-", "/")}${r[6] && r[6] !== "-" ? `, ${r[6]}원` : ""})`, k: "ipo", c: r[2] || null });
+    if (r[4] !== r[3] && r[4].startsWith(ymo)) (ev[r[4]] = ev[r[4]] || []).push({ t: `${ofTxt(r)} 마감`, k: "ipo", c: r[2] || null });
+  });
+  const upOf = OF.filter((r) => r[4] >= t).slice(0, 30);
+  const ofHtml = upOf.length ? `<div class="card"><h2>🆕 다가오는 공모주·증자 청약</h2><table><tr><th>청약일</th><th>회사</th><th class="r">가격</th></tr>
+    ${upOf.map((r) => `<tr><td>${r[3].slice(5).replace("-", "/")}~${r[4].slice(8)}${r[3] <= t ? " <b class=\"up\">진행 중</b>" : ""}</td>
+      <td>${r[2] ? `<a href="#/s/${r[2]}">${esc(r[1])}</a>` : esc(r[1])} <small class="muted">${esc(r[0] === "증자" ? "유상증자" : r[0])}</small><br><small class="muted">${esc(r[8] || "")}${r[5] ? ` · 납입 ${r[5].slice(5).replace("-", "/")}` : ""}${r[0] === "증자" && r[7] ? ` · ${esc(r[7])}` : ""}</small></td>
+      <td class="r">${r[6] && r[6] !== "-" ? esc(r[6]) + "원" : "미정"}</td></tr>`).join("")}</table>
+    <p class="muted small">전자공시 증권신고서에 적힌 일정이에요(매일 오후 5시 갱신). 공모가는 확정 전이면 희망 가격 기준이라 바뀔 수 있어요. 청약은 위에 적힌 증권사 계좌로 해요. 공모주는 상장 첫날 크게 오르기도 하지만 공모가 아래로 떨어지는 경우도 많아요.</p></div>` : "";
   const first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
-  const dot = { big: "#e5484d", mid: "#f59e0b", low: "var(--muted)", off: "#3b82f6", er: "#8b5cf6" };
+  const dot = { big: "#e5484d", mid: "#f59e0b", low: "var(--muted)", off: "#3b82f6", er: "#8b5cf6", ipo: "#10b981" };
   let cells = "";
   for (let i = 0; i < first; i++) cells += `<div></div>`;
   for (let d = 1; d <= last; d++) {
@@ -704,9 +729,10 @@ route(/^\/cal(?!c)/, async () => {
   <div class="card"><h2 style="display:flex;align-items:center;justify-content:space-between">
     <button class="icon-btn" data-mv="-1">‹</button><span>📅 ${y}년 ${m + 1}월 증시 일정</span><button class="icon-btn" data-mv="1">›</button></h2>
     <div class="cal-w">${WD.map((w) => `<span>${w}</span>`).join("")}</div><div class="cal-g">${cells}</div>
-    <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:${dot.er}">●</span> 내 종목 실적 · <span style="color:var(--muted)">●</span> 참고</p></div>
+    <p class="muted small" style="margin:8px 0 0"><span style="color:${dot.big}">●</span> 중요 · <span style="color:${dot.mid}">●</span> 알아 두기 · <span style="color:${dot.off}">●</span> 휴장 · <span style="color:${dot.er}">●</span> 내 종목 실적 · <span style="color:${dot.ipo}">●</span> 청약 · <span style="color:var(--muted)">●</span> 참고</p></div>
   <div class="card"><h2>🗓️ ${m + 1}월 일정</h2>${list || `<div class="muted small">이달은 일정이 없어요.</div>`}
     <p class="muted small">만기일·휴장일·보고서 마감일은 규칙으로 계산했고, '대략'이라고 적힌 건 보통 그 무렵이라는 뜻이에요. 휴장일은 거래소 공지로 바뀔 수 있어요. 종목별 실적 발표일은 회사가 알린 날짜(확정, 굵게)를 쓰고, 없으면 작년 이맘때 공시 날짜로 짐작한 '예상'이에요. ⭐ = 내 종목.</p></div>
+  ${ofHtml}
   ${foot()}`;
 }, "home");
 
@@ -951,6 +977,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
       redraw();
     });
     $("#indbox").addEventListener("toggle", (e) => { if (e.target.open) indTable(d); }, { once: true });
+    whySection(d);
     dartSection(code, !!d.ir);
     simSection(code);
     ovhSection(code, pr.now);
@@ -982,6 +1009,7 @@ route(/^\/s\/([0-9A-Z]{6})/, async (code) => {
   <div class="card"><div style="text-align:center;margin-bottom:6px">${segH()}</div>${probHtml}
     <p class="muted small" style="text-align:center">AI 기준일 ${esc(d.date)} 종가 · 매일 오후 5시 새로 계산</p>${sumHtml}
     <a class="more" href="#/cmp?${code}-" style="text-align:center">🆚 다른 종목과 비교하기</a></div>
+  <div id="whybox"></div>
   <div class="card"><h2>📈 주가 <span class="seg">${[[20, "1개월"], [60, "3개월"], [120, "6개월"], [260, "1년"]].map(([k, l]) => `<button data-range="${k}" class="${k === rg ? "on" : ""}">${l}</button>`).join("")}</span></h2>
     <div class="seg" style="margin:0 0 6px">${[["d", "일봉"], ["w", "주봉"]].map(([k, l]) => `<button data-ctype="${k}" class="${k === ct ? "on" : ""}">${l}</button>`).join("")}</div>
     <canvas id="chart" height="230"></canvas><p class="muted small" id="chartinfo"></p></div>
@@ -1126,6 +1154,29 @@ function fmtInd(c, v) {
   if (["hhll", "double_pat", "hs_pat", "cross_5_20", "cross_20_60"].includes(c)) return `${v > 0 ? "+" : ""}${v.toFixed(0)}`;
   return v.toFixed(2);
 }
+// ❓ 왜 이 확률? — 영향이 큰 지표 3개 (그 지표가 보통 종목 수준이면 확률이 얼마나 달라지나)
+const FL_NAME = { fl_frg5: "외국인 매매(5일)", fl_org5: "기관 매매(5일)", fl_ind5: "개인 매매(5일)" };
+async function whySection(d) {
+  const box = $("#whybox");
+  const w = d.why && d.why[String(H)];
+  if (!box || !w || !w.length) return;
+  let names = {};
+  try {
+    const I = await getJSON(DATA + "ind.json", 3600000);
+    for (const t of Object.values(I.table || {})) for (const [, name, , , cols] of t) for (const c of cols || []) names[c] = name;
+  } catch { /* 이름 없이 */ }
+  const nm = (c) => FL_NAME[c] || names[c] || (c.startsWith("fl_") ? "수급(외국인·기관·개인)" : c.startsWith("er_") || c.startsWith("fin_") ? "실적·재무(전자공시)" : "기타 지표");
+  const mx = Math.max(...w.map((x) => Math.abs(x[1])), 0.01);
+  box.innerHTML = `<div class="card"><h2>❓ 왜 이 확률인가요? <small>${H}일 뒤</small></h2>
+    ${w.map(([c, v]) => {
+      const up = v > 0, val = d.ind && d.ind[c] != null ? ` · 지금 ${fmtInd(c, d.ind[c])}` : "";
+      return `<div style="margin:8px 0"><div class="small"><b>${up ? "⬆️" : "⬇️"} ${esc(nm(c))}</b><span class="muted">${esc(val)}</span>
+        <span class="${up ? "up" : "down"}" style="float:right">${up ? "+" : "−"}${Math.abs(v * 100).toFixed(1)}%p</span></div>
+        <div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:${Math.round(Math.abs(v) / mx * 100)}%;background:var(--${up ? "up" : "down"});border-radius:3px"></div></div></div>`;
+    }).join("")}
+    <p class="muted small">그 지표가 '보통 종목 수준'이었다면 확률이 얼마나 달랐을지 계산했어요. ⬆️는 확률을 올린 이유, ⬇️는 내린 이유예요. 여러 지표가 함께 작용하니 참고만 하세요.</p></div>`;
+}
+
 async function indTable(d) {
   const box = $("#indt");
   try {
@@ -1548,6 +1599,47 @@ route(/^\/my/, async () => {
       <button class="more" id="hadd">추가하기</button></div></details>
     <p class="muted small">🔺 수익 · 🔹 손실 · 수수료·세금은 빼지 않았어요. 같은 종목을 또 넣으면 평균 단가로 합쳐요.</p></div>`;
 
+  // 🩺 산 종목 점검: 본전·손절 참고선·확률 변화·위험 신호를 한 줄씩
+  let checkHtml = "";
+  if (hs.length) {
+    const O = await DART("ovh.json").catch(() => null);
+    const FEE = 0.00015, TAX = 0.002;
+    const items = await Promise.all(hs.map(async ([c, name, price]) => {
+      const s = BYCODE.get(c) || { code: c, name };
+      const P = priceOf(s), now = P.now;
+      if (now == null) return null;
+      let p80 = null;
+      try {
+        const C = (await getJSON(`${DATA}s/${c}.json`)).chart.c, r1 = [];
+        for (let i = Math.max(1, C.length - 120); i < C.length; i++) if (C[i - 1] > 0) r1.push(Math.abs(C[i] / C[i - 1] - 1) * 100);
+        if (r1.length >= 40) p80 = qtl(r1, 0.8);
+      } catch { /* 차트 없음 */ }
+      const be = price * (1 + FEE) / (1 - FEE - TAX);        // 세금·수수료 넣은 본전
+      const stop = p80 ? price * (1 - 2 * p80 / 100) : null;  // 산 가격 기준 손절 참고선
+      const notes = [];
+      let lv = 0; // 0 괜찮음 · 1 살펴보기 · 2 점검 필요
+      if (now >= be) notes.push(`✅ 본전(${won(Math.round(be))}원) 위 · 세금·수수료 빼고 ${pctTxt((now * (1 - FEE - TAX) / (price * (1 + FEE)) - 1) * 100, 1)}`);
+      else notes.push(`본전 ${won(Math.round(be))}원까지 <b>+${((be / now - 1) * 100).toFixed(1)}%</b>`);
+      if (stop) {
+        if (now <= stop) { lv = 2; notes.push(`✂️ <b class="down">손절 참고선 ${won(Math.round(stop))}원 아래</b> · 평소 흔들림을 넘어선 하락이에요`); }
+        else if (now <= stop * 1.03) { lv = Math.max(lv, 1); notes.push(`✂️ 손절 참고선 ${won(Math.round(stop))}원 근처 (${((now / stop - 1) * 100).toFixed(1)}% 남음)`); }
+        else notes.push(`✂️ 손절 참고선 ${won(Math.round(stop))}원까지 ${((now / stop - 1) * 100).toFixed(1)}% 여유`);
+      }
+      const a = s["p" + H], q = s["q" + H];
+      if (a != null && q != null && a - q <= -0.08) { lv = Math.max(lv, 1); notes.push(`🤖 ${H}일 확률이 어제 ${Math.round(q * 100)}% → <b>${Math.round(a * 100)}%</b>로 크게 내렸어요`); }
+      else if (a != null && q != null && a - q >= 0.08) notes.push(`🤖 ${H}일 확률이 어제 ${Math.round(q * 100)}% → <b>${Math.round(a * 100)}%</b>로 크게 올랐어요`);
+      const rk = riskOf(s, O);
+      if (rk.length) { lv = Math.max(lv, rk.some((x) => x[2]) ? 2 : 1); notes.push(rk.map((x) => x[0] + " " + x[1]).join(" · ")); }
+      return { c, name, lv, notes };
+    }));
+    const list = items.filter(Boolean).sort((x, y) => y.lv - x.lv);
+    const icon = ["🟢", "🟠", "🔴"];
+    checkHtml = `<div class="card"><h2>🩺 산 종목 점검 <small>${list.filter((x) => x.lv).length ? `살펴볼 종목 ${list.filter((x) => x.lv).length}개` : "모두 평소 범위"}</small></h2>
+      ${list.map((x) => `<a class="row" href="#/s/${x.c}" style="padding:7px 0"><div class="nm"><b>${icon[x.lv]} ${esc(x.name)}</b><small>${x.notes.join("<br>")}</small></div></a>`).join("")}
+      <p class="muted small">본전 = 세금(0.20%)·수수료(0.015%)를 넣은 가격 · 손절 참고선 = 산 가격에서 그 종목 평소 흔들림(10번 중 8번)의 2배 아래.
+      🔴 점검 필요 · 🟠 살펴보기 · 🟢 괜찮음. 사고팔라는 신호가 아니라 '다시 확인해 볼 때'를 알려 드려요. <a href="#/calc">🧮 계산기</a></p></div>`;
+  }
+
   // 🗳 AI vs 나 채점
   const vs = votes().slice(0, 20);
   const res = await Promise.all(vs.map(async (v) => {
@@ -1603,6 +1695,7 @@ route(/^\/my/, async () => {
   return `<div class="toolbar">${segH()}<span class="muted small">${esc(marketState())} ${esc(liveLabel())}</span></div>
   ${alertHtml(al, 30)}${myEr}<div class="card"><h2>⭐ 관심 종목 <small>${favs().length}개</small></h2>${favList(0, true)}</div>
   ${holdHtml}
+  ${checkHtml}
   <div class="card"><h2>🗳 AI vs 나</h2>${voteHtml}</div>
   ${pc}
   <p class="muted small">관심 종목·산 종목·찍은 기록은 이 휴대폰(브라우저)에만 저장돼요. 휴대폰 알림을 켜면 종목 코드만 알림 서버로 보내요.</p>${foot()}`;
@@ -1673,6 +1766,51 @@ function ovhCalc(rows, now) {
   });
   return { items, open, soon, odd };
 }
+// ⚠️ 종목의 위험 신호: [아이콘, 설명, 심각(true/false)]
+const ALERT_TXT = ["", "투자주의", "투자경고", "투자위험"];
+function riskOf(s, O) {
+  const out = [];
+  if (halt(s)) out.push(["⛔", "거래정지", true]);
+  if (s.managed) out.push(["🚨", "관리종목", true]);
+  if (s.alert) out.push(["⚠️", ALERT_TXT[s.alert] || "투자주의", s.alert >= 2]);
+  if (O && O.s && O.s[s.code]) {
+    const o = ovhCalc(O.s[s.code], priceOf(s).now);
+    if (o.open >= 10) out.push(["💣", `풀릴 수 있는 물량 최대 ${o.open.toFixed(0)}%`, true]);
+    else if (o.open >= 3) out.push(["💣", `풀릴 수 있는 물량 최대 ${o.open.toFixed(1)}%`, false]);
+  }
+  return out;
+}
+
+// ───────── ⚠️ 위험 종목 모아 보기 ─────────
+let riskTab = store.get("ss-risk", "all");
+route(/^\/risk/, async () => {
+  view.innerHTML = `<div class="loading">위험 종목 불러오는 중…</div>`;
+  await Promise.all([loadIndex(), loadLive()]);
+  const O = await DART("ovh.json").catch(() => null);
+  const mine = new Set([...favs(), ...holds().map((x) => x[0])]);
+  const all = INDEX.map((s) => ({ s, r: riskOf(s, O) })).filter((x) => x.r.length);
+  const tabs = [["all", "전체"], ["halt", "⛔ 거래정지"], ["mgd", "🚨 관리"], ["alert", "⚠️ 투자주의·경고"], ["ovh", "💣 물량"]];
+  const pick = { all: () => true, halt: (x) => halt(x.s), mgd: (x) => x.s.managed, alert: (x) => !!x.s.alert, ovh: (x) => x.r.some((r) => r[0] === "💣") };
+  const list = all.filter(pick[riskTab] || pick.all)
+    .sort((a, b) => (mine.has(b.s.code) - mine.has(a.s.code)) || (b.r.filter((r) => r[2]).length - a.r.filter((r) => r[2]).length) || (b.r.length - a.r.length));
+  const myHit = all.filter((x) => mine.has(x.s.code));
+  after(() => document.querySelectorAll("[data-rt]").forEach((b) => b.onclick = () => { riskTab = b.dataset.rt; store.set("ss-risk", riskTab); render(); }));
+  const cnt = (k) => all.filter(pick[k]).length;
+  return `<div class="card"><h2>⚠️ 위험 종목 모아 보기 <small>${all.length}종목</small></h2>
+    <p class="small" style="margin:0">거래정지·관리종목·투자주의/경고/위험·전환사채 물량이 많은 종목을 한곳에 모았어요. 사기 전에, 그리고 가진 종목이 있다면 꼭 확인해 보세요.</p></div>
+  ${mine.size ? `<div class="card"><h2>💼 내 종목 중 <small>관심·산 종목 ${mine.size}개</small></h2>${myHit.length ? myHit.map((x) => riskRow(x)).join("") : `<p class="small" style="margin:0">✅ 내 종목 중에는 위험 신호가 있는 종목이 없어요.</p>`}</div>` : ""}
+  <div class="toolbar"><div class="seg" style="flex-wrap:wrap">${tabs.map(([k, l]) => `<button class="${riskTab === k ? "on" : ""}" data-rt="${k}">${l} ${cnt(k)}</button>`).join("")}</div></div>
+  <div class="card">${list.slice(0, 150).map((x) => riskRow(x, mine)).join("") || `<p class="muted small">해당하는 종목이 없어요.</p>`}
+    ${list.length > 150 ? `<p class="muted small">앞의 150개만 보여 드려요.</p>` : ""}</div>
+  <div class="card"><p class="muted small" style="margin:0">⛔ 거래정지: 사고팔 수 없어요 · 🚨 관리종목: 상장폐지 위험이 있다는 표시 · ⚠️ 투자주의→경고→위험: 짧은 기간 크게 오르는 등 이상 급등으로 거래소가 지정 ·
+    💣 물량: 지금 가격이면 주식으로 바꾸는 게 이득인 전환사채 등이 전체 주식의 3% 이상. 자세한 설명은 <a href="/trading-halt.html">거래정지 글</a>, <a href="/convertible-bond.html">전환사채 글</a>에 있어요.</p></div>${foot()}`;
+}, "themes");
+function riskRow(x, mine) {
+  const pr = priceOf(x.s);
+  return `<a class="row" href="#/s/${x.s.code}"><div class="nm"><b>${mine && mine.has(x.s.code) ? "💼 " : ""}${esc(x.s.name)}</b><small>${x.r.map((r) => `${r[0]} ${r[1]}`).join(" · ")}</small></div>
+    <div class="rt"><b>${won(pr.now)}</b><small class="${cls(pr.chg)}">${pctTxt(pr.chg, 1)}</small></div></a>`;
+}
+
 const ovhLevel = (o) => (o.open >= 10 ? ["🔴", "높음", "n"] : o.open >= 3 || o.soon >= 5 ? ["🟠", "주의", "z"] : ["🟢", "낮음", "p"]);
 async function ovhSection(code, now) {
   const box = $("#ovhbox");
