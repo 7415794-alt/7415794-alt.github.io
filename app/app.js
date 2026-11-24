@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.14.0";
+const VERSION = "2.15.0";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -224,7 +224,7 @@ const foot = () => `<p class="foot">AI 확률은 과거 자료로 계산한 참�
 // 메뉴: 묶음별 화면 목록 (더보기에서 묶어서, 홈에는 8칸만)
 const MENU = [
   ["🤖 AI 예측", [["#/rank?up", "🏆", "확률순위"], ["#/rank?best", "🎯", "적중순위"], ["#/score", "📋", "AI 성적표"], ["#/aifollow", "🤖", "AI 따라하기"], ["#/cmp", "🆚", "비교"]]],
-  ["💼 내 투자", [["#/my", "💼", "내 종목"], ["#/calc", "🧮", "계산기"], ["#/risk", "⚠️", "위험 종목"], ["#/ovh", "💣", "물량 경고"], ["#/paper", "🎮", "가상 계좌"]]],
+  ["💼 내 투자", [["#/my", "💼", "내 종목"], ["#/calc", "🧮", "계산기"], ["#/risk", "⚠️", "위험 종목"], ["#/ovh", "💣", "물량 경고"], ["#/paper", "🎮", "가상 계좌"], ["#/league", "🏆", "모의투자 랭킹"]]],
   ["🗞 시장 소식", [["#/issues", "🔥", "오늘 이슈"], ["#/themes", "🧩", "테마"], ["#/market", "🌏", "시장 분위기"], ["#/cal", "📅", "일정 달력"],
     ["#/ins", "👔", "임원 매매"], ["#/div", "💰", "배당 순위"], ["#/brief", "☀️", "아침 브리핑"]]],
   ["🔎 찾기·공부", [["#/screen", "🔎", "조건검색"], ["#/hot", "🚀", "신고가·급증"], ["#/terms", "📖", "용어 사전"]]],
@@ -2058,6 +2058,7 @@ route(/^\/paper(?:\?([0-9A-Z]{6}))?/, async (code) => {
       st.log.unshift([todayKST(), c, nm, "S", k, now]);
       store.set("ss-paper", st); toast(`${nm} ${k}주를 가상으로 팔았어요`); render();
     });
+    if (lbMe() && st.log.length) lbSend();
     $("#preset").onclick = () => { if (confirm("가상 계좌를 처음부터 다시 시작할까요? 지금 기록은 지워져요.")) { store.set("ss-paper", null); render(); } };
   });
   const cmp = (t, v, sub) => `<div class="stat"><small>${t}</small><b class="${cls(v)}">${v == null ? "-" : pctTxt(v, 1)}</b><div class="small muted">${sub}</div></div>`;
@@ -2077,6 +2078,7 @@ route(/^\/paper(?:\?([0-9A-Z]{6}))?/, async (code) => {
   <details class="card"><summary><b>🤖 비교 대상: 시작할 때 AI 상위 5종목</b></summary>${st.bench.map(([c, nm, p0]) => { const now = nowOf(c) || p0; return `<a class="row" href="#/s/${c}" style="padding:4px 0"><div class="nm"><b>${esc(nm)}</b><small>${won(p0)}원 → ${won(now)}원</small></div><span class="${cls(now / p0 - 1)}">${pctTxt((now / p0 - 1) * 100, 1)}</span></a>`; }).join("")}</details>
   ${st.log.length ? `<details class="card"><summary><b>🧾 거래 기록</b> <small class="muted">${st.log.length}건</small></summary><table><tr><th>날짜</th><th>종목</th><th class="r">수량·가격</th></tr>
     ${st.log.map(([dt, c, nm, sd, q, p]) => `<tr><td>${dt.slice(5)}</td><td>${sd === "B" ? "🔴 사기" : "🔵 팔기"} ${esc(nm)}</td><td class="r">${q}주 · ${won(p)}</td></tr>`).join("")}</table></details>` : ""}
+  <a class="card" href="#/league" style="display:block"><h2 style="margin:0">🏆 모의투자 랭킹 <small>${lbMe() ? `'${esc(lbMe().nick)}'로 참가 중 ›` : "AI 계좌·다른 사람과 겨루기 ›"}</small></h2></a>
   <div class="card"><button class="more" id="preset">🔄 처음부터 다시</button><p class="muted small">연습용 가상 거래예요. 실제 주문이 나가지 않아요.</p></div>${foot()}`;
 }, "my");
 
@@ -2120,6 +2122,87 @@ function showIntro(i = 0) {
   el.querySelector("#ix-skip").onclick = close;
   el.querySelector("#ix-next").onclick = () => (last ? close() : showIntro(i + 1));
 }
+
+// ───────── 🏆 모의투자 랭킹 (사람 + AI 모의투자 계좌) ─────────
+const lbMe = () => store.get("ss-lb", null); // {id, nick} — 랭킹에 올리기로 한 경우만
+const lbId = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function lbSend(force) {
+  const me = lbMe(), st = paper();
+  if (!me || !st || !st.log.length) return null;
+  const nowOf = (c) => { const s = BYCODE.get(c); return s ? priceOf(s).now : null; };
+  const tot = st.cash + Object.entries(st.pos).reduce((a, [c, [q, avg]]) => a + (nowOf(c) || avg) * q, 0);
+  const ret = Math.round((tot / PAPER0 - 1) * 10000) / 10000;
+  const sig = JSON.stringify([ret, st.start, st.log.length, me.nick, todayKST()]);
+  if (!force && store.get("ss-lb-sig", "") === sig) return store.get("ss-lb-last", null);
+  try {
+    const r = await (await fetch(PUSH_URL + "/lb", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: me.id, nick: me.nick, ret, start: st.start, trades: st.log.length }) })).json();
+    if (r.ok) { store.set("ss-lb-sig", sig); store.set("ss-lb-last", r); store.set("ss-lb-h", r.h); }
+    return r;
+  } catch { return null; }
+}
+const ymdBot = (s) => (s && s.length === 6 ? `20${s.slice(0, 2)}-${s.slice(2, 4)}-${s.slice(4)}` : s || "");
+route(/^\/league/, async () => {
+  await Promise.all([loadIndex(), loadLive()]);
+  const [B, L, SG] = await Promise.all([getJSON(DATA + "bots.json", 600000).catch(() => null),
+    fetch(PUSH_URL + "/lb").then((r) => r.json()).catch(() => ({ rows: [] })), getJSON(DATA + "strategy.json", 3600000).catch(() => null)]);
+  const st = paper(), me = lbMe();
+  if (me && st && st.log.length) await lbSend();
+  const myH = store.get("ss-lb-h", "");
+  const rows = (L.rows || []);
+  after(() => {
+    const j = $("#lbjoin");
+    if (j) j.onclick = async () => {
+      const nick = ($("#lbnick").value || "").trim();
+      if (nick.length < 2 || nick.length > 12) return toast("이름은 2~12글자로 정해 주세요");
+      store.set("ss-lb", { id: (me && me.id) || lbId(), nick });
+      const r = await lbSend(true);
+      toast(r && r.ok ? `🏆 랭킹에 올렸어요 (${r.rank}위)` : r && r.why === "nick" ? "쓸 수 없는 이름이에요" : "랭킹 서버에 연결하지 못했어요");
+      render();
+    };
+    const q = $("#lbquit");
+    if (q) q.onclick = async () => {
+      try { await fetch(PUSH_URL + "/lbdel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: me.id }) }); } catch { /* 30일 뒤 자동으로 빠짐 */ }
+      store.set("ss-lb", null); store.set("ss-lb-sig", ""); store.set("ss-lb-h", ""); toast("랭킹에서 뺐어요"); render();
+    };
+  });
+  const days = (s) => Math.max(0, Math.round((new Date(todayKST()) - new Date(s)) / 864e5));
+  const medal = (i) => ["🥇", "🥈", "🥉"][i] || `${i + 1}`;
+  const people = rows.length ? rows.slice(0, 50).map((r, i) => `<div class="row" style="padding:6px 0${r.h === myH ? ";background:var(--soft);border-radius:8px" : ""}">
+      <div class="nm"><b>${medal(i)} ${esc(r.nick)}${r.h === myH ? " (나)" : ""}</b><small>${esc(r.start)}부터 · ${days(r.start)}일째 · 거래 ${r.tr}번</small></div>
+      <div class="rt"><b class="${cls(r.ret)}">${pctTxt(r.ret * 100, 1)}</b></div></div>`).join("") : `<p class="muted small">아직 아무도 없어요. 첫 번째로 올려 보세요!</p>`;
+  const join = !st ? `<p class="small" style="margin:0">먼저 <a href="#/paper">🎮 가상 계좌</a>를 열고 한 번 이상 사고팔아 보세요.</p>`
+    : !st.log.length ? `<p class="small" style="margin:0"><a href="#/paper">🎮 가상 계좌</a>에서 한 번 이상 사면 랭킹에 올릴 수 있어요.</p>`
+    : me ? `<p class="small" style="margin:0">'<b>${esc(me.nick)}</b>' 이름으로 올라가 있어요. 가상 계좌를 열 때마다 수익률이 새로 반영돼요.</p><button class="more" id="lbquit" style="margin-top:6px">랭킹에서 빼기</button>`
+    : `<p class="small" style="margin:0 0 6px">랭킹에 보일 이름을 정해 주세요 (2~12글자).</p><input id="lbnick" class="num" maxlength="12" placeholder="이름" autocomplete="off"><button class="more" id="lbjoin" style="margin-top:6px">🏆 랭킹에 올리기</button>`;
+  // AI 모의투자 계좌
+  const bots = B && B.bots ? Object.entries(B.bots).sort((a, b) => b[1].ret - a[1].ret) : [];
+  const botHtml = bots.length ? bots.map(([k, b]) => {
+    const pos = Object.entries(b.pos || {}), pend = b.pend || [];
+    return `<details style="border-bottom:1px solid var(--line);padding:6px 0"><summary style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span><b>${esc(b.name)}</b><br><small class="muted">${esc(b.desc)}</small></span><b class="${cls(b.ret)}">${pctTxt(b.ret * 100, 1)}</b></summary>
+      <div class="small" style="margin:6px 0">${pos.length ? `📦 지금 가진 종목: ${pos.map(([c, [q, px, nm]]) => `<a href="#/s/${c}">${esc(nm)}</a>`).join(" · ")}` : ""}
+        ${pend.length ? `<br>🛒 다음 거래일 시가에 살 종목: ${pend.map((c) => `<a href="#/s/${c}">${esc((B.pend_names || {})[c] || c)}</a>`).join(" · ")}` : ""}
+        ${(b.log || []).filter((x) => x[3] === "S").slice(0, 5).length ? `<br>🧾 최근 판 종목: ${(b.log || []).filter((x) => x[3] === "S").slice(0, 5).map((x) => `${esc(x[2])} <span class="${cls(x[6])}">${pctTxt(x[6] * 100, 1)}</span>`).join(" · ")}` : ""}</div></details>`;
+  }).join("") : `<p class="muted small">오늘 오후 5시 계산 뒤부터 매일 자동으로 사고팔아요.</p>`;
+  // 과거 1년 매매 방법 비교
+  let sgHtml = "";
+  const S5 = SG && SG.h && (SG.h[String(H)] || SG.h["5"]);
+  if (S5) {
+    const L2 = Object.entries(S5.s).sort((a, b) => b[1].ret - a[1].ret);
+    sgHtml = `<div class="card"><h2>🧪 과거 1년이었다면? <small>${esc(S5.from)} ~ ${esc(S5.to)} · ${S5.n}번</small></h2><table><tr><th>고르는 방법</th><th class="r">수익</th><th class="r">최대 하락</th></tr>
+      ${L2.map(([k, v]) => `<tr><td class="small">${esc(v.name)}${v.win != null ? `<br><small class="muted">평균보다 나은 번 ${v.win}/${S5.n} · 고른 종목 오른 비율 ${Math.round((v.hit || 0) * 100)}%</small>` : ""}</td>
+        <td class="r"><b class="${cls(v.ret)}">${pctTxt(v.ret * 100, 1)}</b></td><td class="r ${cls(v.mdd)}">${pctTxt(v.mdd * 100, 0)}</td></tr>`).join("")}</table>
+      <p class="muted small">그날까지의 자료로만 배운 AI 확률과, 그날까지 확정된 적중률만 써서 ${SG.h[String(H)] ? H : 5}거래일마다 5종목을 다음 날 시가에 사서 팔았다고 계산했어요 (세금·수수료 뺌, 거래대금 적은 종목·스팩·우선주 뺌). 과거 결과일 뿐이에요.</p></div>`;
+  }
+  return `<div class="card"><h2>🏆 모의투자 랭킹</h2><p class="small" style="margin:0">가상의 1,000만 원으로 누가 가장 잘 굴리는지 겨뤄요. AI 모의투자 계좌도 함께 겨뤄요.</p></div>
+  <div class="card"><h2>🤖 AI 모의투자 계좌 <small>${B && B.start ? esc(ymdBot(B.start)) + "부터 · " + (B.days || 0) + "거래일" : ""}</small></h2>${botHtml}
+    <p class="muted small">AI가 매일 오후 5시 계산 뒤 고른 종목을 다음 거래일 시가에 사서 5거래일째 종가에 팔아요. 수수료·세금을 빼고, 진짜 주문은 나가지 않아요. 누르면 가진 종목이 보여요.</p></div>
+  <div class="card"><h2>👥 사람 랭킹 <small>${rows.length}명</small></h2>${people}</div>
+  <div class="card"><h2>🙋 나도 참가하기</h2>${join}
+    <p class="muted small">랭킹 서버에는 정한 이름·수익률·시작일·거래 횟수만 보내요. 종목·금액은 보내지 않아요. 30일 동안 가상 계좌를 열지 않으면 랭킹에서 빠져요. 수익률은 각자 휴대폰에서 계산한 값이에요.</p></div>
+  ${sgHtml}${foot()}`;
+}, "my");
 
 // ───────── 📖 주식 용어 사전 (사이트 glossary.html과 같은 내용) ─────────
 route(/^\/terms(?:\?(.+))?/, async (q0) => {
