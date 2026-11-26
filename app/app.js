@@ -2,7 +2,7 @@
    - 매일 오후 5시에 계산해 둔 파일(AI 확률·차트·뉴스·테마)과 장중 20분마다 모은 현재가를 읽어서 바로 보여 줌.
    - 서버 계산이 없어서 빠르고, 한 번 본 자료는 인터넷이 끊겨도 다시 볼 수 있음. */
 "use strict";
-const VERSION = "2.16.0";
+const VERSION = "2.16.1";
 const QS = new URLSearchParams(location.search);
 const DATA = QS.get("data") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/data/app/";
 const LIVE = QS.get("live") || "https://raw.githubusercontent.com/7415794-alt/stock-ai/live/live.json";
@@ -2312,6 +2312,12 @@ route(/^\/league/, async () => {
   });
   const days = (s) => Math.max(0, Math.round((new Date(todayKST()) - new Date(s)) / 864e5));
   const medal = (i) => ["🥇", "🥈", "🥉"][i] || `${i + 1}`;
+  // 가진 종목은 지금 가격(장중이면 실시간)으로 다시 평가 → 산 다음 날부터 매일 수익률이 보임
+  const botNow = (c, px) => { const s = BYCODE.get(c); const n = s ? priceOf(s).now : null; return n || px; };
+  if (B && B.bots) for (const b of Object.values(B.bots)) {
+    const pos = Object.entries(b.pos || {});
+    if (pos.length && b.cash != null) b.ret = (b.cash + pos.reduce((a, [c, [q, px]]) => a + q * botNow(c, px), 0)) / 1e7 - 1;
+  }
   // 사람 + AI 계좌를 한 줄로 (AI는 🤖 표시)
   const botRows = B && B.bots ? Object.values(B.bots).filter((b) => (b.hist || []).length).map((b) => ({ nick: b.name, ret: b.ret, start: ymdBot(B.start), tr: (b.log || []).length, bot: 1, td: B.days || 0 })) : [];
   const all = [...rows, ...botRows].sort((a, b) => b.ret - a.ret);
@@ -2329,7 +2335,7 @@ route(/^\/league/, async () => {
     const pos = Object.entries(b.pos || {}), pend = b.pend || [];
     return `<details style="border-bottom:1px solid var(--line);padding:6px 0"><summary style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <span><b>${esc(b.name)}</b><br><small class="muted">${esc(b.desc)}</small></span><b class="${cls(b.ret)}">${pctTxt(b.ret * 100, 1)}</b></summary>
-      <div class="small" style="margin:6px 0">${pos.length ? `📦 지금 가진 종목: ${pos.map(([c, [q, px, nm]]) => `<a href="#/s/${c}">${esc(nm)}</a>`).join(" · ")}` : ""}
+      <div class="small" style="margin:6px 0">${pos.length ? `📦 지금 가진 종목: ${pos.map(([c, [q, px, nm]]) => { const r = botNow(c, px) / px - 1; return `<a href="#/s/${c}">${esc(nm)}</a> <span class="${cls(r)}">${pctTxt(r * 100, 1)}</span>`; }).join(" · ")}` : ""}
         ${pend.length ? `<br>🛒 다음 거래일 시가에 살 종목: ${pend.map((c) => `<a href="#/s/${c}">${esc((B.pend_names || {})[c] || c)}</a>`).join(" · ")}` : ""}
         ${(b.log || []).filter((x) => x[3] === "S").slice(0, 5).length ? `<br>🧾 최근 판 종목: ${(b.log || []).filter((x) => x[3] === "S").slice(0, 5).map((x) => `${esc(x[2])} <span class="${cls(x[6])}">${pctTxt(x[6] * 100, 1)}</span>`).join(" · ")}` : ""}</div></details>`;
   }).join("") : `<p class="muted small">오늘 오후 5시 계산 뒤부터 매일 자동으로 사고팔아요.</p>`;
@@ -2345,7 +2351,7 @@ route(/^\/league/, async () => {
   }
   return `<div class="card"><h2>🏆 모의투자 랭킹</h2><p class="small" style="margin:0">가상의 1,000만 원으로 누가 가장 잘 굴리는지 겨뤄요. AI 모의투자 계좌도 함께 겨뤄요.</p></div>
   <div class="card"><h2>🤖 AI 모의투자 계좌 <small>${B && B.start ? esc(ymdBot(B.start)) + "부터 · " + (B.days || 0) + "거래일" : ""}</small></h2>${botHtml}
-    <p class="muted small">AI가 매일 오후 5시 계산 뒤 고른 종목을 다음 거래일 시가에 사서 5거래일째 종가에 팔아요. 수수료·세금을 빼고, 진짜 주문은 나가지 않아요. 누르면 가진 종목이 보여요.</p></div>
+    <p class="muted small">AI가 매일 오후 5시 계산 뒤 고른 종목을 다음 거래일 시가에 사서 5거래일째 종가에 팔아요. 수익률은 산 다음 날부터 매일(장중엔 지금 가격으로) 바뀌어요. 수수료·세금을 빼고, 진짜 주문은 나가지 않아요. 누르면 가진 종목이 보여요.</p></div>
   <div class="card"><h2>🏆 전체 랭킹 <small>사람 ${rows.length}명 · AI ${botRows.length}개</small></h2>${people}
     ${botRows.length && rows.length ? `<p class="small" style="margin:8px 0 0">🤖 AI 계좌를 모두 이긴 사람: <b>${beat}명</b></p>` : ""}</div>
   <div class="card"><h2>🙋 나도 참가하기</h2>${join}
